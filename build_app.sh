@@ -1,0 +1,57 @@
+#!/bin/bash
+# builds build/Watchlist.app and build/bin/watchlist (the cli used for cron and launchd)
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# use full xcode when command line tools are the active developer dir
+if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app ]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
+swift build -c release --product WatchlistApp
+swift build -c release --product watchlist
+BIN="$(swift build -c release --show-bin-path)"
+
+APP="build/Watchlist.app"
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/bin
+cp "$BIN/WatchlistApp" "$APP/Contents/MacOS/Watchlist"
+cp "$BIN/watchlist" build/bin/watchlist
+
+# app icon, regenerated when make_icon.swift changes
+if [ ! -f build/AppIcon.icns ] || [ make_icon.swift -nt build/AppIcon.icns ]; then
+    rm -rf build/AppIcon.iconset
+    swift make_icon.swift build/AppIcon.iconset >/dev/null
+    iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
+fi
+cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key><string>Watchlist</string>
+    <key>CFBundleDisplayName</key><string>Watchlist</string>
+    <key>CFBundleIdentifier</key><string>local.personal.watchlist</string>
+    <key>CFBundleExecutable</key><string>Watchlist</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
+# ad hoc signature so gatekeeper lets a locally built app run
+codesign --force --sign - "$APP" >/dev/null
+codesign --force --sign - build/bin/watchlist >/dev/null
+
+# nudge finder and the dock to pick up the new icon
+touch "$APP"
+
+echo "Built $APP"
+echo "Built build/bin/watchlist"
