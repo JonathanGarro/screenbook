@@ -251,6 +251,10 @@ This product uses the TMDB API but is not endorsed or certified by TMDB. Movie a
 
 Streaming availability data is provided by [JustWatch](https://www.justwatch.com) through TMDB's watch providers endpoint.
 
+## License
+
+MIT. See [LICENSE](LICENSE). TMDB and JustWatch data are subject to their own terms; bring your own TMDB API key.
+
 ## Future ideas (out of scope for v1)
 
 - iOS companion app or a web UI
