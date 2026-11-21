@@ -41,6 +41,8 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
     public var watchedOn: String?
     /// tv: treat every listed episode as released, for streaming drops that tmdb records as weekly broadcasts
     public var allAvailable: Bool
+    /// tv: tmdb's series type, e.g. "Miniseries"
+    public var seriesType: String?
 
     public var id: String { "\(mediaType.rawValue)-\(tmdbId)" }
 
@@ -51,7 +53,7 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
                 lastAiredDate: String? = nil, nextAirSeason: Int? = nil, nextAirEpisode: Int? = nil,
                 nextAirDate: String? = nil, seenSeason: Int? = nil, seenEpisode: Int? = nil,
                 releaseFlagged: Bool = false, lastRefreshed: String? = nil, watchedOn: String? = nil,
-                allAvailable: Bool = false) {
+                allAvailable: Bool = false, seriesType: String? = nil) {
         self.tmdbId = tmdbId
         self.mediaType = mediaType
         self.title = title
@@ -74,6 +76,7 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
         self.lastRefreshed = lastRefreshed
         self.watchedOn = watchedOn
         self.allAvailable = allAvailable
+        self.seriesType = seriesType
     }
 
     public var lastAired: EpisodeRef? {

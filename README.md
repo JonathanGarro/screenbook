@@ -88,7 +88,7 @@ Review text.
 
 Each note gets a `watchlist_id` property (`movie-<tmdb id>-0` or `tv-<tmdb id>-<season>`). Watchlist finds notes by that id, so renaming or moving a note in Obsidian does not break **Open in Obsidian**, and **Update in Obsidian** writes into the renamed note (Watchlist adopts the new title). For a note sent before ids existed, use **Locate Note...** in the review editor once; it adds the id to that note.
 
-Season notes use `type: Television`, are titled like `Silo - Season 3`, link `connected_to: "[[Silo]]"`, and skip the IMDb fields. Colons in titles become " - " in file names.
+Season notes use `type: Television`, are titled like `Silo - Season 3` (or just the show name when TMDB marks the show as a Miniseries), link `connected_to: "[[Silo]]"`, and skip the IMDb fields. Colons in titles become " - " in file names.
 
 Setup is in Settings, Obsidian Reviews:
 

@@ -511,6 +511,27 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(draft.connectedTo == "Test Show")
     }
 
+    @Test func miniseriesDraftSkipsSeasonSuffix() async throws {
+        let mock = MockTransport()
+        let mini = Fixture.tv(id: 300, last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)])
+            .replacingOccurrences(of: "\"in_production\":true,", with: "\"in_production\":false,\"type\":\"Miniseries\",")
+        mock.on("tv/300", mini)
+        mock.on("tv/200", Fixture.tv(last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)]))
+        let service = try makeService(mock, Clock("2026-02-01"))
+        let show = try await service.add(SearchResult(id: 300, mediaType: "tv"))
+        #expect(show.seriesType == "Miniseries")
+        #expect(try service.review(for: show, season: 1).noteTitle == "Test Show")
+        let regular = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        #expect(try service.review(for: regular, season: 1).noteTitle == "Test Show - Season 1")
+
+        // before a refresh stores the type, a lone season named Miniseries is enough
+        var legacy = regular
+        legacy.seriesType = nil
+        try service.db.upsertTitle(legacy)
+        try service.db.replaceSeasons(tmdbId: 200, [SeasonSummary(seasonNumber: 1, episodeCount: 3, name: "Miniseries")])
+        #expect(try service.review(for: legacy, season: 1).noteTitle == "Test Show")
+    }
+
     @Test func movieDraftUsesWatchedDay() async throws {
         let mock = MockTransport()
         let clock = Clock("2026-03-10")

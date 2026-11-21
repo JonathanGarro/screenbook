@@ -149,6 +149,9 @@ public final class Database: @unchecked Sendable {
         if !cols.contains("watched_on") {
             try exec("alter table titles add column watched_on text;")
         }
+        if !cols.contains("series_type") {
+            try exec("alter table titles add column series_type text;")
+        }
         if !cols.contains("all_available") {
             try exec("alter table titles add column all_available integer not null default 0;")
         }
@@ -245,8 +248,8 @@ extension Database {
                 digital_release_date, status, overview, poster_path,
                 last_aired_season, last_aired_episode, last_aired_date,
                 next_air_season, next_air_episode, next_air_date,
-                seen_season, seen_episode, release_flagged, last_refreshed, watched_on, all_available)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                seen_season, seen_episode, release_flagged, last_refreshed, watched_on, all_available, series_type)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict (tmdb_id, media_type) do update set
                 title = excluded.title, year = excluded.year,
                 region_release_date = excluded.region_release_date,
@@ -258,14 +261,15 @@ extension Database {
                 next_air_date = excluded.next_air_date,
                 seen_season = excluded.seen_season, seen_episode = excluded.seen_episode,
                 release_flagged = excluded.release_flagged, last_refreshed = excluded.last_refreshed,
-                watched_on = excluded.watched_on, all_available = excluded.all_available
+                watched_on = excluded.watched_on, all_available = excluded.all_available,
+                series_type = excluded.series_type
             """, [
                 .of(t.tmdbId), .text(t.mediaType.rawValue), .text(t.title), .of(t.year), .of(t.regionReleaseDate),
                 .text(t.addedOn), .of(t.digitalReleaseDate), .of(t.status), .of(t.overview), .of(t.posterPath),
                 .of(t.lastAiredSeason), .of(t.lastAiredEpisode), .of(t.lastAiredDate),
                 .of(t.nextAirSeason), .of(t.nextAirEpisode), .of(t.nextAirDate),
                 .of(t.seenSeason), .of(t.seenEpisode), .of(t.releaseFlagged), .of(t.lastRefreshed),
-                .of(t.watchedOn), .of(t.allAvailable),
+                .of(t.watchedOn), .of(t.allAvailable), .of(t.seriesType),
             ])
     }
 
@@ -316,7 +320,8 @@ extension Database {
             releaseFlagged: r.bool("release_flagged"),
             lastRefreshed: r.string("last_refreshed"),
             watchedOn: r.string("watched_on"),
-            allAvailable: r.bool("all_available")
+            allAvailable: r.bool("all_available"),
+            seriesType: r.string("series_type")
         )
     }
 }

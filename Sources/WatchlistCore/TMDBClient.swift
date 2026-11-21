@@ -135,6 +135,8 @@ public struct TVDetails: Decodable, Sendable {
     public let firstAirDate: String?
     public let status: String?
     public let inProduction: Bool?
+    /// e.g. "Scripted", "Miniseries", "Documentary"
+    public let type: String?
     public let numberOfSeasons: Int?
     public let overview: String?
     public let posterPath: String?

@@ -211,6 +211,7 @@ public final class WatchlistService: @unchecked Sendable {
             t.regionReleaseDate = DateText.normalize(s.firstAirDate)
             t.year = t.regionReleaseDate.flatMap { Int($0.prefix(4)) }
             t.status = s.status
+            t.seriesType = s.type
             t.overview = s.overview
             t.posterPath = s.posterPath
             t.lastAiredSeason = s.lastEpisodeToAir?.seasonNumber

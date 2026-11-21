@@ -301,10 +301,18 @@ extension WatchlistService {
             return Review(tmdbId: t.tmdbId, mediaType: .movie, noteTitle: t.title,
                           finishedOn: t.watchedOn ?? today)
         case .tv:
-            return Review(tmdbId: t.tmdbId, mediaType: .tv, season: s, noteTitle: "\(t.title) - Season \(s)",
+            return Review(tmdbId: t.tmdbId, mediaType: .tv, season: s,
+                          noteTitle: try isMiniseries(t) ? t.title : "\(t.title) - Season \(s)",
                           finishedOn: try db.lastWatchedDay(tmdbId: t.tmdbId, season: s) ?? today,
                           connectedTo: ObsidianNote.filename(t.title))
         }
+    }
+
+    /// tmdb's series type, or a lone regular season tmdb named "Miniseries" for shows not refreshed since types were stored
+    public func isMiniseries(_ t: Title) throws -> Bool {
+        if let type = t.seriesType { return type.caseInsensitiveCompare("Miniseries") == .orderedSame }
+        let regular = try db.seasons(tmdbId: t.tmdbId).filter { $0.seasonNumber > 0 }
+        return regular.count == 1 && regular[0].name?.caseInsensitiveCompare("Miniseries") == .orderedSame
     }
 
     public func saveReview(_ r: Review) throws {
