@@ -13,6 +13,7 @@ Features:
 - Menu bar count of unwatched episodes
 - Notifications for new episodes and movie releases
 - Optional streaming availability (JustWatch data via TMDB)
+- Write reviews (movies, or TV by season) and send them to Obsidian as notes
 - Markdown digest and CSV export
 - A `watchlist` CLI that shares the same database
 
@@ -51,6 +52,53 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 - **Watchlist menu**: Write Digest (Cmd+D) writes `outputs/digest.md` and reveals it in Finder. Export CSV writes `outputs/watchlist.csv`. Show Data Folder opens the folder.
 - **Settings**: API key, check on open, menu bar count, notifications and the 6 hour check, region, streaming toggle, rent/buy toggle.
 
+## Reviews and Obsidian
+
+Write reviews in Watchlist and send them to an Obsidian vault as notes.
+
+- **Movies** are reviewed one to one. Click **Mark Watched** on a movie (the date is editable), then **Write Review**.
+- **Shows** are reviewed by season. In a show's episode list, pick the season and click **Review Season**.
+- The editor has the note title, a half-star rating, finished date, rewatch, connected to, and a series index for movies. The finished date defaults to the day you marked the movie watched, or the day you checked off the season's last episode.
+- **Save Draft** keeps it in Watchlist (Reviews in the sidebar). **Send to Obsidian** writes the note; sending again updates it. If a note with that name already exists, or you edited the sent note in Obsidian, Watchlist asks before replacing it.
+
+Notes look like this:
+
+```
+---
+type: Film
+rating: 4.5
+stars: ★★★★½
+finished_on: 2025-05-02
+connected_to:
+film_series_index:
+rewatch: false
+imdb_id: tt31193180
+imdb_link: https://www.imdb.com/title/tt31193180/
+imdb_rating: '7.6'
+imdb_votes: 288,689
+metascore: '84'
+rotten_tomatoes: 97%
+my_rating_delta: -7
+watchlist_id: movie-1233413-0
+---
+# Sinners
+
+Review text.
+```
+
+Each note gets a `watchlist_id` property (`movie-<tmdb id>-0` or `tv-<tmdb id>-<season>`). Watchlist finds notes by that id, so renaming or moving a note in Obsidian does not break **Open in Obsidian**, and **Update in Obsidian** writes into the renamed note (Watchlist adopts the new title). For a note sent before ids existed, use **Locate Note...** in the review editor once; it adds the id to that note.
+
+Season notes use `type: Television`, are titled like `Silo - Season 3`, link `connected_to: "[[Silo]]"`, and skip the IMDb fields. Colons in titles become " - " in file names.
+
+Setup is in Settings, Obsidian Reviews:
+
+- **Vault**: defaults to the vault Obsidian has open; choose another if needed.
+- **Movie folder**, **TV season folder**: relative to the vault (defaults `Film` and `Television`).
+- **Show index folder**: if set, a minimal index note (`type: Television`, `# Show`) is created there when a season links to a show that has none.
+- **OMDb key** (optional, free at omdbapi.com): fills `imdb_rating`, `imdb_votes`, `metascore`, `rotten_tomatoes`, and `my_rating_delta` (rating x 20 minus the Rotten Tomatoes percentage). Without it those fields are left blank. `imdb_id` and `imdb_link` come from TMDB either way. The key is stored as `OMDB_API_KEY` in the same `.env` file.
+
+The first send may trigger a macOS prompt to let Watchlist access the folder your vault is in.
+
 ## CLI commands
 
 The CLI shares the same database and settings as the app.
@@ -62,6 +110,7 @@ watchlist list
 watchlist check [--force]
 watchlist watch <tmdb_id> <season> <episode> [--unwatch]
 watchlist watch <tmdb_id> --all-up-to <season> <episode>
+watchlist available <tmdb_id> on|off
 watchlist digest [--force]
 watchlist export
 watchlist config [--region XX] [--streaming on|off] [--rent-buy on|off] [--check-on-open on|off] [--menu-bar on|off] [--notify on|off] [--notify-movies on|off] [--periodic on|off] [--api-key KEY]
@@ -93,9 +142,10 @@ A GUI app has no meaningful working directory, so the relative paths from the or
 
 Open `watchlist.db` in any SQLite client.
 
-- `titles`: `tmdb_id`, `media_type` ('movie' or 'tv'), `title`, `year`, `region_release_date`, `added_on`, plus `digital_release_date`, `status`, `overview`, `poster_path`, `last_aired_season/episode/date`, `next_air_season/episode/date`, `seen_season/episode` (the latest aired episode at the previous check), `release_flagged` (movie release already reported), `last_refreshed`. Primary key is (`tmdb_id`, `media_type`).
+- `titles`: `tmdb_id`, `media_type` ('movie' or 'tv'), `title`, `year`, `region_release_date`, `added_on`, plus `digital_release_date`, `status`, `overview`, `poster_path`, `last_aired_season/episode/date`, `next_air_season/episode/date`, `seen_season/episode` (the latest aired episode at the previous check), `release_flagged` (movie release already reported), `last_refreshed`, `watched_on` (movies), `all_available` (tv streaming drop override). Primary key is (`tmdb_id`, `media_type`).
 - `watched_episodes`: `tmdb_id`, `season`, `episode`, `watched_on`.
 - `seasons`: `tmdb_id`, `season_number`, `episode_count`, `air_date`, `name`. Copied from the series details call; used to work out which episodes have aired.
+- `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`.
 - `api_cache`: `cache_key` (path plus sorted query, never the key), `body` (raw JSON), `fetched_at`.
 - `meta`: `last_check` timestamp and `last_report` (the last check result as JSON).
 
@@ -130,6 +180,10 @@ Wide theatrical comes before limited because a limited run in two cities is not 
 - "Unwatched" means aired and not in `watched_episodes`.
 - "New since last check" means unwatched episodes later than the latest aired episode recorded at the previous check (`seen_season`/`seen_episode`). Adding a show sets that marker, so a show's back catalog is a backlog, not "new".
 - The full per-season episode list (`/tv/{id}/season/{n}`) is fetched only when you open a show in the app.
+
+### Streaming drops
+
+TMDB records original broadcast dates only. A show that aired weekly in its home country but landed all at once on a streaming service (for example a BBC show on Netflix US) will look like it is still airing. Tick **All episodes are out** in the show's episode list (or `watchlist available <tmdb_id> on`) and every episode TMDB lists counts as released: none are greyed out, they count toward unwatched, and "Mark Season Watched" includes them. Turning it on does not trigger new-episode notifications for the episodes already listed.
 
 ### Caching and rate limits
 
@@ -232,6 +286,7 @@ Sources/WatchlistCore/        shared logic
   TMDBClient.swift            api wrapper with caching and rate limit handling
   WatchlistService.swift      add, remove, check, watch, release date and episode logic
   Digest.swift                markdown digest, text tables, csv, attribution
+  Reviews.swift               review drafts, obsidian note format and export, omdb
 Sources/WatchlistApp/         swiftui app
 Sources/watchlist/main.swift  cli
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)
@@ -258,6 +313,5 @@ MIT. See [LICENSE](LICENSE). TMDB and JustWatch data are subject to their own te
 ## Future ideas (out of scope for v1)
 
 - iOS companion app or a web UI
-- Ratings, reviews, or personal notes
 - Import from other watchlist apps (Trakt, TV Time, Letterboxd exports)
 - Multi-user support or iCloud sync

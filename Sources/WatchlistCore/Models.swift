@@ -37,6 +37,10 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
     /// movies: set once the release date has been reported, so it is reported only once
     public var releaseFlagged: Bool
     public var lastRefreshed: String?
+    /// movies: the day it was marked watched
+    public var watchedOn: String?
+    /// tv: treat every listed episode as released, for streaming drops that tmdb records as weekly broadcasts
+    public var allAvailable: Bool
 
     public var id: String { "\(mediaType.rawValue)-\(tmdbId)" }
 
@@ -46,7 +50,8 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
                 posterPath: String? = nil, lastAiredSeason: Int? = nil, lastAiredEpisode: Int? = nil,
                 lastAiredDate: String? = nil, nextAirSeason: Int? = nil, nextAirEpisode: Int? = nil,
                 nextAirDate: String? = nil, seenSeason: Int? = nil, seenEpisode: Int? = nil,
-                releaseFlagged: Bool = false, lastRefreshed: String? = nil) {
+                releaseFlagged: Bool = false, lastRefreshed: String? = nil, watchedOn: String? = nil,
+                allAvailable: Bool = false) {
         self.tmdbId = tmdbId
         self.mediaType = mediaType
         self.title = title
@@ -67,6 +72,8 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
         self.seenEpisode = seenEpisode
         self.releaseFlagged = releaseFlagged
         self.lastRefreshed = lastRefreshed
+        self.watchedOn = watchedOn
+        self.allAvailable = allAvailable
     }
 
     public var lastAired: EpisodeRef? {
@@ -92,7 +99,7 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
             if let d = digitalReleaseDate, d > today { return d }
             return nil
         case .tv:
-            return nextAirDate
+            return allAvailable ? nil : nextAirDate
         }
     }
 
@@ -133,6 +140,46 @@ public struct SeasonSummary: Hashable, Codable, Sendable {
         self.episodeCount = episodeCount
         self.airDate = airDate
         self.name = name
+    }
+}
+
+// reviews
+
+/// a review draft or sent review. movies use season 0; tv reviews are per season.
+public struct Review: Codable, Hashable, Identifiable, Sendable {
+    public var tmdbId: Int
+    public var mediaType: MediaType
+    public var season: Int
+    public var noteTitle: String
+    public var rating: Double?
+    public var finishedOn: String?
+    public var body: String
+    public var rewatch: Bool
+    public var connectedTo: String?
+    public var seriesIndex: Int?
+    public var exportedAt: String?
+    public var exportPath: String?
+    public var updatedAt: String
+
+    public var id: String { "\(mediaType.rawValue)-\(tmdbId)-\(season)" }
+    public var isSent: Bool { exportPath != nil }
+
+    public init(tmdbId: Int, mediaType: MediaType, season: Int = 0, noteTitle: String, rating: Double? = nil,
+                finishedOn: String? = nil, body: String = "", rewatch: Bool = false, connectedTo: String? = nil,
+                seriesIndex: Int? = nil, exportedAt: String? = nil, exportPath: String? = nil, updatedAt: String = "") {
+        self.tmdbId = tmdbId
+        self.mediaType = mediaType
+        self.season = season
+        self.noteTitle = noteTitle
+        self.rating = rating
+        self.finishedOn = finishedOn
+        self.body = body
+        self.rewatch = rewatch
+        self.connectedTo = connectedTo
+        self.seriesIndex = seriesIndex
+        self.exportedAt = exportedAt
+        self.exportPath = exportPath
+        self.updatedAt = updatedAt
     }
 }
 

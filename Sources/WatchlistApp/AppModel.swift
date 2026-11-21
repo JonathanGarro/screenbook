@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, movies, shows, all
+    case whatsNew, upcoming, unwatched, movies, shows, all, reviews
 
     var id: String { rawValue }
 
@@ -19,6 +19,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .movies: return "Movies"
         case .shows: return "TV Shows"
         case .all: return "Everything"
+        case .reviews: return "Reviews"
         }
     }
 
@@ -30,6 +31,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .movies: return "film"
         case .shows: return "tv"
         case .all: return "square.stack"
+        case .reviews: return "star.bubble"
         }
     }
 }
@@ -48,6 +50,8 @@ final class AppModel {
     /// observable copies of per-show db rows so episode checkmarks redraw immediately
     var watchedByTitle: [String: Set<EpisodeRef>] = [:]
     var seasonsByTitle: [String: [SeasonSummary]] = [:]
+    var reviews: [Review] = []
+    var editingReview: Review?
     var report: CheckReport?
     var selection: SidebarItem? = .whatsNew
     var selectedTitleID: String?
@@ -97,6 +101,7 @@ final class AppModel {
             unwatched = counts
             watchedByTitle = watchedMap
             seasonsByTitle = seasonMap
+            reviews = try service.reviews()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -125,7 +130,7 @@ final class AppModel {
     func items(for item: SidebarItem) -> [Title] {
         let day = today
         switch item {
-        case .whatsNew:
+        case .whatsNew, .reviews:
             return []
         case .upcoming:
             return titles.filter { $0.nextDate(today: day) != nil }
@@ -149,6 +154,9 @@ final class AppModel {
             return n > 0 ? n : nil
         case .unwatched:
             let n = items(for: .unwatched).count
+            return n > 0 ? n : nil
+        case .reviews:
+            let n = reviews.filter { !$0.isSent }.count
             return n > 0 ? n : nil
         default:
             return nil
@@ -329,6 +337,94 @@ final class AppModel {
 
     func revealDataFolder() {
         NSWorkspace.shared.activateFileViewerSelecting([paths.dataDir])
+    }
+
+    // reviews
+
+    func existingReview(_ t: Title, season: Int = 0) -> Review? {
+        let s = t.mediaType == .movie ? 0 : season
+        return reviews.first { $0.tmdbId == t.tmdbId && $0.mediaType == t.mediaType && $0.season == s }
+    }
+
+    func hasSavedReview(_ r: Review) -> Bool {
+        reviews.contains { $0.id == r.id }
+    }
+
+    func openReview(_ t: Title, season: Int = 0) {
+        guard let service else { return }
+        do {
+            editingReview = try service.review(for: t, season: season)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func saveReview(_ r: Review) {
+        do {
+            try service?.saveReview(r)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteReview(_ r: Review) {
+        do {
+            try service?.deleteReview(r)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func sendReview(_ r: Review, overwrite: Bool) async throws -> (url: URL, review: Review) {
+        guard let service else { throw ReviewError.noVault }
+        defer { reload() }
+        return try await service.sendReview(r, overwrite: overwrite)
+    }
+
+    /// finds the note by its watchlist_id and opens it; returns the review with its current path and title
+    func openInObsidian(_ r: Review) throws -> Review {
+        guard let service else { throw ReviewError.noVault }
+        let result = try service.openURL(for: r)
+        NSWorkspace.shared.open(result.url)
+        reload()
+        return result.review
+    }
+
+    func relinkNote(_ r: Review, file: URL) throws -> Review {
+        guard let service else { throw ReviewError.noVault }
+        let updated = try service.relinkNote(r, file: file)
+        reload()
+        return updated
+    }
+
+    func setAllAvailable(_ t: Title, _ on: Bool) {
+        do {
+            try service?.setAllAvailable(t, on)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setMovieWatched(_ t: Title, on day: String?) {
+        do {
+            try service?.setMovieWatched(t, on: day)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    var hasOMDbKey: Bool { APIKeyStore.resolve(paths, name: APIKeyStore.omdbVariableName) != nil }
+
+    func saveOMDbKey(_ key: String) {
+        do {
+            try APIKeyStore.save(key, paths, name: APIKeyStore.omdbVariableName)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     // settings

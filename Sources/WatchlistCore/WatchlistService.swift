@@ -120,9 +120,30 @@ public final class WatchlistService: @unchecked Sendable {
         return matches[0]
     }
 
+    /// last released episode: tmdb's last aired, or the end of the latest listed season when all episodes are out
+    public func effectiveLastAired(_ t: Title) throws -> EpisodeRef? {
+        guard t.allAvailable else { return t.lastAired }
+        let listed = try db.seasons(tmdbId: t.tmdbId).filter { $0.seasonNumber > 0 && $0.episodeCount > 0 }
+        guard let last = listed.max(by: { $0.seasonNumber < $1.seasonNumber }) else { return t.lastAired }
+        let end = EpisodeRef(season: last.seasonNumber, episode: last.episodeCount)
+        return max(end, t.lastAired ?? end)
+    }
+
     public func airedEpisodes(_ t: Title) throws -> [EpisodeRef] {
         guard t.mediaType == .tv else { return [] }
-        return EpisodeMath.aired(seasons: try db.seasons(tmdbId: t.tmdbId), lastAired: t.lastAired)
+        return EpisodeMath.aired(seasons: try db.seasons(tmdbId: t.tmdbId), lastAired: try effectiveLastAired(t))
+    }
+
+    /// turns the all-episodes-out override on or off for a show
+    public func setAllAvailable(_ t: Title, _ on: Bool) throws {
+        guard var current = try db.title(tmdbId: t.tmdbId, mediaType: .tv) else { throw WatchlistError.notTV(t.tmdbId) }
+        current.allAvailable = on
+        // count everything now listed as already seen, so turning it on does not fire "new episode" alerts
+        if on, let end = try effectiveLastAired(current) {
+            current.seenSeason = end.season
+            current.seenEpisode = end.episode
+        }
+        try db.upsertTitle(current)
     }
 
     public func unwatchedAired(_ t: Title) throws -> [EpisodeRef] {
@@ -299,11 +320,12 @@ public final class WatchlistService: @unchecked Sendable {
                     report.showsWithUnwatched.append(ShowUpdate(title: t, unwatchedCount: unwatched.count,
                                                                 firstUnwatched: unwatched.first, newlyAired: newly))
                 }
-                if let next = t.nextAirDate, next <= DateText.addDays(day, 7) {
+                if !t.allAvailable, let next = t.nextAirDate, next <= DateText.addDays(day, 7) {
                     report.upcomingEpisodes.append(t)
                 }
-                t.seenSeason = t.lastAiredSeason ?? t.seenSeason
-                t.seenEpisode = t.lastAiredEpisode ?? t.seenEpisode
+                let released = try effectiveLastAired(t)
+                t.seenSeason = released?.season ?? t.seenSeason
+                t.seenEpisode = released?.episode ?? t.seenEpisode
             }
             try db.upsertTitle(t)
         }

@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var key = ""
     @State private var saved = false
     @State private var notifyStatus: UNAuthorizationStatus = .notDetermined
+    @State private var omdbKey = ""
+    @State private var omdbSaved = false
 
     static let regions: [(String, String)] = [
         ("US", "United States"), ("CA", "Canada"), ("GB", "United Kingdom"), ("IE", "Ireland"),
@@ -90,6 +92,38 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Obsidian Reviews") {
+                LabeledContent("Vault") {
+                    HStack {
+                        Text(vaultLabel).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+                        Button("Choose...") { chooseVault() }
+                        if !model.config.obsidianVaultPath.isEmpty {
+                            Button("Auto") { set(\.obsidianVaultPath, "") }.help("Use the vault Obsidian has open")
+                        }
+                    }
+                }
+                TextField("Movie folder", text: binding(\.obsidianFilmFolder), prompt: Text("Film"))
+                TextField("TV season folder", text: binding(\.obsidianTVFolder), prompt: Text("Television"))
+                TextField("Show index folder", text: binding(\.obsidianIndexFolder), prompt: Text("Leave empty to skip"))
+                Text("Folders are relative to the vault. When a season links to a show with no index note, one is created in the index folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SecureField("OMDb API key (optional)", text: $omdbKey)
+                HStack {
+                    Text(model.hasOMDbKey ? "OMDb key set. IMDb, Metascore, and Rotten Tomatoes fill in for movies." : "Without it those fields stay blank. Free key at omdbapi.com.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if omdbSaved { Text("Saved").foregroundStyle(.secondary) }
+                    Button("Save Key") {
+                        model.saveOMDbKey(omdbKey)
+                        omdbKey = ""
+                        omdbSaved = true
+                    }
+                    .disabled(omdbKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+
             Section("Data") {
                 LabeledContent("Folder") {
                     Text(model.paths.dataDir.path)
@@ -104,10 +138,35 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 760)
+        .frame(width: 560, height: 820)
         .task {
             notifyStatus = await Notifier.status()
         }
+    }
+
+    private var vaultLabel: String {
+        if let v = ObsidianVault.resolve(model.config) {
+            return model.config.obsidianVaultPath.isEmpty ? "\(v.lastPathComponent) (auto)" : v.path
+        }
+        return "None found"
+    }
+
+    private func chooseVault() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Vault"
+        if let current = ObsidianVault.resolve(model.config) { panel.directoryURL = current }
+        if panel.runModal() == .OK, let url = panel.url {
+            set(\.obsidianVaultPath, url.path)
+        }
+    }
+
+    private func set(_ path: WritableKeyPath<AppConfig, String>, _ value: String) {
+        var c = model.config
+        c[keyPath: path] = value
+        model.saveConfig(c)
     }
 
     private var statusText: String {

@@ -18,6 +18,9 @@ struct TitleDetailView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if title.mediaType == .movie {
+                    movieWatchSection
+                }
                 if model.config.streamingEnabled {
                     streamingSection
                 }
@@ -74,7 +77,9 @@ struct TitleDetailView: View {
                         if let last = title.lastAired {
                             fact("Latest episode", "\(last.code), \(DateText.pretty(title.lastAiredDate))")
                         }
-                        if let next = title.nextAir {
+                        if title.allAvailable {
+                            fact("Next episode", "All listed episodes treated as out")
+                        } else if let next = title.nextAir {
                             fact("Next episode", "\(next.code), \(DateText.pretty(title.nextAirDate))")
                         } else {
                             fact("Next episode", "None scheduled")
@@ -102,6 +107,42 @@ struct TitleDetailView: View {
                 Text(value.count == 10 && value.dropFirst(4).first == "-" ? DateText.pretty(value) : value)
             }
         }
+    }
+
+    private var movieWatchSection: some View {
+        let review = model.existingReview(title)
+        return HStack(spacing: 12) {
+            if let day = title.watchedOn {
+                Label("Watched", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                DatePicker("Watched on", selection: Binding(
+                    get: { ReviewEditor.date(day) ?? Date() },
+                    set: { model.setMovieWatched(title, on: DateText.day($0)) }
+                ), displayedComponents: .date)
+                .labelsHidden()
+                .fixedSize()
+                Button("Unmark") { model.setMovieWatched(title, on: nil) }
+                    .buttonStyle(.link)
+            } else {
+                Button {
+                    model.setMovieWatched(title, on: model.today)
+                } label: {
+                    Label("Mark Watched", systemImage: "checkmark.circle")
+                }
+            }
+            Spacer()
+            if let review {
+                StarsLabel(rating: review.rating)
+                Text(review.isSent ? "In Obsidian" : "Draft").font(.caption).foregroundStyle(.secondary)
+            }
+            Button {
+                model.openReview(title)
+            } label: {
+                Label(review == nil ? "Write Review" : "Edit Review", systemImage: "square.and.pencil")
+            }
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.5)))
     }
 
     private var streamingSection: some View {
@@ -183,6 +224,14 @@ struct EpisodesSection: View {
                     .labelsHidden()
                     .frame(maxWidth: 180)
                 }
+                let seasonReview = model.existingReview(title, season: season)
+                Button {
+                    model.openReview(title, season: season)
+                } label: {
+                    Label(seasonReview == nil ? "Review Season" : (seasonReview!.isSent ? "Edit Review" : "Edit Draft"),
+                          systemImage: "square.and.pencil")
+                }
+                .help("Write a review of this season for Obsidian")
                 Menu {
                     Button("Mark Season Watched") {
                         model.setWatched(title, aired.map(\.ref), watched: true)
@@ -190,7 +239,7 @@ struct EpisodesSection: View {
                     Button("Mark Season Unwatched") {
                         model.setWatched(title, episodes.map(\.ref), watched: false)
                     }
-                    if let last = title.lastAired {
+                    if let last = (try? model.service?.effectiveLastAired(title)) ?? title.lastAired {
                         Divider()
                         Button("Mark All Aired Watched (through \(last.code))") {
                             Task { await model.markUpTo(title, last) }
@@ -202,6 +251,13 @@ struct EpisodesSection: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
+
+            Toggle(isOn: Binding(get: { title.allAvailable }, set: { model.setAllAvailable(title, $0) })) {
+                Text("All episodes are out")
+                Text("For shows a streaming service released all at once. TMDB only lists original broadcast dates.")
+            }
+            .toggleStyle(.checkbox)
+            .font(.callout)
 
             if loading {
                 ProgressView().controlSize(.small)
@@ -238,6 +294,7 @@ struct EpisodesSection: View {
     private var aired: [EpisodeDetail] { episodes.filter(isAired) }
 
     private func isAired(_ ep: EpisodeDetail) -> Bool {
+        if title.allAvailable { return true }
         guard let d = DateText.normalize(ep.airDate) else { return false }
         return d <= model.today
     }

@@ -102,6 +102,22 @@ create table if not exists meta (
     key text primary key,
     value text
 );
+create table if not exists reviews (
+    tmdb_id integer not null,
+    media_type text not null,
+    season integer not null default 0,
+    note_title text not null,
+    rating real,
+    finished_on text,
+    body text not null default '',
+    rewatch integer not null default 0,
+    connected_to text,
+    series_index integer,
+    exported_at text,
+    export_path text,
+    updated_at text not null,
+    primary key (tmdb_id, media_type, season)
+);
 """
 
 // connection
@@ -124,6 +140,18 @@ public final class Database: @unchecked Sendable {
             try exec("pragma journal_mode = wal;")
         }
         try exec(schemaSQL)
+        try migrate()
+    }
+
+    /// additive column changes for databases created by older versions
+    private func migrate() throws {
+        let cols = try query("pragma table_info(titles)").compactMap { $0.string("name") }
+        if !cols.contains("watched_on") {
+            try exec("alter table titles add column watched_on text;")
+        }
+        if !cols.contains("all_available") {
+            try exec("alter table titles add column all_available integer not null default 0;")
+        }
     }
 
     public static func inMemory() throws -> Database {
@@ -217,8 +245,8 @@ extension Database {
                 digital_release_date, status, overview, poster_path,
                 last_aired_season, last_aired_episode, last_aired_date,
                 next_air_season, next_air_episode, next_air_date,
-                seen_season, seen_episode, release_flagged, last_refreshed)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                seen_season, seen_episode, release_flagged, last_refreshed, watched_on, all_available)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             on conflict (tmdb_id, media_type) do update set
                 title = excluded.title, year = excluded.year,
                 region_release_date = excluded.region_release_date,
@@ -229,13 +257,15 @@ extension Database {
                 next_air_season = excluded.next_air_season, next_air_episode = excluded.next_air_episode,
                 next_air_date = excluded.next_air_date,
                 seen_season = excluded.seen_season, seen_episode = excluded.seen_episode,
-                release_flagged = excluded.release_flagged, last_refreshed = excluded.last_refreshed
+                release_flagged = excluded.release_flagged, last_refreshed = excluded.last_refreshed,
+                watched_on = excluded.watched_on, all_available = excluded.all_available
             """, [
                 .of(t.tmdbId), .text(t.mediaType.rawValue), .text(t.title), .of(t.year), .of(t.regionReleaseDate),
                 .text(t.addedOn), .of(t.digitalReleaseDate), .of(t.status), .of(t.overview), .of(t.posterPath),
                 .of(t.lastAiredSeason), .of(t.lastAiredEpisode), .of(t.lastAiredDate),
                 .of(t.nextAirSeason), .of(t.nextAirEpisode), .of(t.nextAirDate),
                 .of(t.seenSeason), .of(t.seenEpisode), .of(t.releaseFlagged), .of(t.lastRefreshed),
+                .of(t.watchedOn), .of(t.allAvailable),
             ])
     }
 
@@ -284,7 +314,9 @@ extension Database {
             seenSeason: r.int("seen_season"),
             seenEpisode: r.int("seen_episode"),
             releaseFlagged: r.bool("release_flagged"),
-            lastRefreshed: r.string("last_refreshed")
+            lastRefreshed: r.string("last_refreshed"),
+            watchedOn: r.string("watched_on"),
+            allAvailable: r.bool("all_available")
         )
     }
 }
@@ -355,5 +387,62 @@ extension Database {
 
     public func setMeta(_ key: String, _ value: String?) throws {
         try execute("insert or replace into meta (key, value) values (?, ?)", [.text(key), .of(value)])
+    }
+}
+
+// reviews
+
+extension Database {
+    public func upsertReview(_ r: Review) throws {
+        try execute("""
+            insert or replace into reviews (tmdb_id, media_type, season, note_title, rating, finished_on, body,
+                rewatch, connected_to, series_index, exported_at, export_path, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                .of(r.tmdbId), .text(r.mediaType.rawValue), .of(r.season), .text(r.noteTitle),
+                r.rating.map { .double($0) } ?? .null, .of(r.finishedOn), .text(r.body), .of(r.rewatch),
+                .of(r.connectedTo), .of(r.seriesIndex), .of(r.exportedAt), .of(r.exportPath), .text(r.updatedAt),
+            ])
+    }
+
+    public func review(tmdbId: Int, mediaType: MediaType, season: Int) throws -> Review? {
+        try query("select * from reviews where tmdb_id = ? and media_type = ? and season = ?",
+                  [.of(tmdbId), .text(mediaType.rawValue), .of(season)]).first.map(Database.review(from:))
+    }
+
+    public func allReviews() throws -> [Review] {
+        try query("select * from reviews order by updated_at desc").map(Database.review(from:))
+    }
+
+    public func deleteReview(tmdbId: Int, mediaType: MediaType, season: Int) throws {
+        try execute("delete from reviews where tmdb_id = ? and media_type = ? and season = ?",
+                    [.of(tmdbId), .text(mediaType.rawValue), .of(season)])
+    }
+
+    /// latest day any episode of the season was checked off
+    public func lastWatchedDay(tmdbId: Int, season: Int) throws -> String? {
+        try query("select max(watched_on) as d from watched_episodes where tmdb_id = ? and season = ?",
+                  [.of(tmdbId), .of(season)]).first?.string("d")
+    }
+
+    static func review(from r: Row) -> Review {
+        var rating: Double?
+        if case .double(let v) = r["rating"] { rating = v }
+        if case .int(let v) = r["rating"] { rating = Double(v) }
+        return Review(
+            tmdbId: r.int("tmdb_id") ?? 0,
+            mediaType: MediaType(rawValue: r.string("media_type") ?? "movie") ?? .movie,
+            season: r.int("season") ?? 0,
+            noteTitle: r.string("note_title") ?? "",
+            rating: rating,
+            finishedOn: r.string("finished_on"),
+            body: r.string("body") ?? "",
+            rewatch: r.bool("rewatch"),
+            connectedTo: r.string("connected_to"),
+            seriesIndex: r.int("series_index"),
+            exportedAt: r.string("exported_at"),
+            exportPath: r.string("export_path"),
+            updatedAt: r.string("updated_at") ?? ""
+        )
     }
 }

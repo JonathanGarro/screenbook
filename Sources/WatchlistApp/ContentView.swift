@@ -23,6 +23,8 @@ struct ContentView: View {
                     NoKeyView()
                 } else if model.selection == .whatsNew {
                     WhatsNewList()
+                } else if model.selection == .reviews {
+                    ReviewsList()
                 } else {
                     TitleList(items: model.items(for: model.selection ?? .all))
                 }
@@ -65,6 +67,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showingAdd) {
             AddTitleSheet()
+        }
+        .sheet(item: $model.editingReview) { r in
+            ReviewEditor(review: r)
         }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.errorMessage != nil },
@@ -192,9 +197,13 @@ struct TitleRow: View {
         case .movie:
             if let d = title.regionReleaseDate, d > today { return "Movie, releases \(DateText.pretty(d))" }
             if let d = title.digitalReleaseDate, d > today { return "Movie, digital \(DateText.pretty(d))" }
+            if let w = title.watchedOn { return "Movie, watched \(DateText.pretty(w))" }
             if let d = title.regionReleaseDate { return "Movie, released \(DateText.pretty(d))" }
             return "Movie, no date yet"
         case .tv:
+            if title.allAvailable {
+                return "TV, all episodes out"
+            }
             if let d = title.nextAirDate {
                 return "TV, \(title.nextAir?.code ?? "next") on \(DateText.pretty(d))"
             }

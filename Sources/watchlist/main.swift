@@ -13,6 +13,7 @@ commands:
   check [--force]                              refresh all titles and print what is new
   watch <tmdb_id> <season> <episode> [--unwatch]
   watch <tmdb_id> --all-up-to <season> <episode>
+  available <tmdb_id> on|off                   treat every listed episode as released (streaming drops)
   digest [--force]                             write outputs/digest.md and print it
   export                                       write outputs/watchlist.csv
   config [--region XX] [--streaming on|off] [--rent-buy on|off]
@@ -86,7 +87,9 @@ func listTable(_ service: WatchlistService) throws -> String {
                 note = "no date yet"
             }
         case .tv:
-            if let d = t.nextAirDate {
+            if t.allAvailable {
+                note = "all episodes out"
+            } else if let d = t.nextAirDate {
                 next = d
                 note = t.nextAir?.code ?? ""
             } else {
@@ -186,6 +189,13 @@ do {
             let t = try service.resolve(id, .tv)
             print("\(unwatch ? "Unmarked" : "Marked") \(t.title) \(ref.code) \(unwatch ? "as unwatched" : "watched").")
         }
+
+    case "available":
+        guard args.count == 2 else { fail("usage: watchlist available <tmdb_id> on|off") }
+        let t = try service.resolve(int(args[0], "tmdb_id"), .tv)
+        try service.setAllAvailable(t, onOff(args[1]))
+        let updated = try service.resolve(t.tmdbId, .tv)
+        print("\(t.title): all episodes out is \(updated.allAvailable ? "on" : "off"), \(try service.unwatchedAired(updated).count) unwatched.")
 
     case "digest":
         let force = takeFlag(&args, "--force")

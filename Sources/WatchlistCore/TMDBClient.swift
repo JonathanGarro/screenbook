@@ -111,6 +111,7 @@ public struct MovieDetails: Decodable, Sendable {
     public let status: String?
     public let overview: String?
     public let posterPath: String?
+    public let imdbId: String?
     public let releaseDates: ReleaseDates?
 }
 

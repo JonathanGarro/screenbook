@@ -55,3 +55,8 @@ touch "$APP"
 
 echo "Built $APP"
 echo "Built build/bin/watchlist"
+
+# an already running copy keeps using the old build until it is fully quit
+if pgrep -f "Watchlist.app/Contents/MacOS/Watchlist" >/dev/null; then
+    echo "Note: Watchlist is still running the previous build. Quit it fully (menu bar icon > Quit Watchlist, or Cmd+Q) and reopen."
+fi

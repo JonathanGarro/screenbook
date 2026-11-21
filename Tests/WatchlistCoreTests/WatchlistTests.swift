@@ -303,6 +303,31 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(report.newEpisodeShows.isEmpty)
     }
 
+    @Test func allAvailableTreatsListedEpisodesAsReleased() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-11-21")
+        mock.on("tv/200", Fixture.tv(last: (1, 2, "2026-11-19"), next: (1, 3, "2026-11-26"), seasons: [(1, 3)]))
+        let service = try makeService(mock, clock)
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        #expect(try service.unwatchedAired(show).count == 2)
+        #expect(show.nextDate(today: service.today) == "2026-11-26")
+
+        try service.setAllAvailable(show, true)
+        let on = try service.resolve(200, .tv)
+        #expect(try service.unwatchedAired(on).map(\.code) == ["S01E01", "S01E02", "S01E03"])
+        #expect(on.nextDate(today: service.today) == nil)
+
+        // no new-episode report for episodes that were already listed, and the override survives a refresh
+        let report = try await service.check(force: true)
+        #expect(report.newEpisodeShows.isEmpty)
+        #expect(report.upcomingEpisodes.isEmpty)
+        #expect(try service.resolve(200, .tv).allAvailable)
+
+        let n = try await service.markAllUpTo(200, season: 1, episode: 3)
+        #expect(n == 3)
+        #expect(try service.unwatchedAired(try service.resolve(200, .tv)).isEmpty)
+    }
+
     @Test func watchAllUpTo() async throws {
         let mock = MockTransport()
         mock.on("tv/200", Fixture.tv(last: (2, 5, "2026-01-25"), next: nil, seasons: [(0, 2), (1, 10), (2, 10)]))
@@ -390,5 +415,218 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(APIKeyStore.resolve(paths, environment: ["TMDB_API_KEY": "fromenv"]) == "fromenv")
         try? APIKeyStore.save("saved-key", paths)
         #expect(APIKeyStore.resolve(paths, environment: [:]) == "saved-key")
+    }
+}
+
+// reviews
+
+@Suite struct ReviewTests {
+    func tempVault() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("vault-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func config() -> AppConfig {
+        var c = AppConfig()
+        c.obsidianFilmFolder = "Culture/Film"
+        c.obsidianTVFolder = "Culture/Television"
+        c.obsidianIndexFolder = "Culture/Indexes"
+        return c
+    }
+
+    @Test func starsAndNumbers() {
+        #expect(ObsidianNote.stars(4.5) == "★★★★½")
+        #expect(ObsidianNote.stars(0.5) == "½")
+        #expect(ObsidianNote.stars(5) == "★★★★★")
+        #expect(ObsidianNote.stars(nil) == "")
+        #expect(ObsidianNote.number(4) == "4")
+        #expect(ObsidianNote.number(3.5) == "3.5")
+    }
+
+    @Test func filenamesMatchVaultHabits() {
+        #expect(ObsidianNote.filename("Alien: Romulus") == "Alien - Romulus")
+        #expect(ObsidianNote.filename("Face/Off") == "Face-Off")
+        #expect(ObsidianNote.filename("What? Now") == "What Now")
+    }
+
+    @Test func ratingDeltaFormula() {
+        #expect(ObsidianNote.ratingDelta(rating: 4.5, rottenTomatoes: "97%") == -7)
+        #expect(ObsidianNote.ratingDelta(rating: 2, rottenTomatoes: "95%") == -55)
+        #expect(ObsidianNote.ratingDelta(rating: 4, rottenTomatoes: nil) == nil)
+    }
+
+    @Test func movieMarkdownMatchesTemplate() {
+        let r = Review(tmdbId: 1, mediaType: .movie, noteTitle: "Sinners", rating: 4.5, finishedOn: "2025-05-02",
+                       body: "Loved it.", connectedTo: "Knives Out", seriesIndex: 2)
+        let md = ObsidianNote.markdown(r, imdbId: "tt31193180",
+                                       ratings: ExternalRatings(imdbRating: "7.6", imdbVotes: "288,689", metascore: "84", rottenTomatoes: "97%"))
+        #expect(md == """
+        ---
+        type: Film
+        rating: 4.5
+        stars: ★★★★½
+        finished_on: 2025-05-02
+        connected_to: "[[Knives Out]]"
+        film_series_index: 2
+        rewatch: false
+        imdb_id: tt31193180
+        imdb_link: https://www.imdb.com/title/tt31193180/
+        imdb_rating: '7.6'
+        imdb_votes: 288,689
+        metascore: '84'
+        rotten_tomatoes: 97%
+        my_rating_delta: -7
+        watchlist_id: movie-1-0
+        ---
+        # Sinners
+
+        Loved it.
+
+        """)
+    }
+
+    @Test func seasonMarkdownOmitsImdbFields() {
+        let r = Review(tmdbId: 2, mediaType: .tv, season: 3, noteTitle: "Silo - Season 3", rating: 1.5,
+                       finishedOn: "2026-09-05", connectedTo: "Silo")
+        let md = ObsidianNote.markdown(r)
+        #expect(md.contains("type: Television\nrating: 1.5\nstars: ★½\nfinished_on: 2026-09-05\nconnected_to: \"[[Silo]]\"\nfilm_series_index:\nrewatch: false\nwatchlist_id: tv-2-3\n---\n# Silo - Season 3\n"))
+        #expect(!md.contains("imdb"))
+    }
+
+    @Test func seasonDraftDefaultsToLastCheckedOffDay() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-02-01")
+        mock.on("tv/200", Fixture.tv(last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)]))
+        let service = try makeService(mock, clock, config: config())
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv", name: "Test Show"))
+        clock.set("2026-02-03")
+        try service.setWatched(200, season: 1, episode: 1)
+        clock.set("2026-02-05")
+        try service.setWatched(200, season: 1, episode: 3)
+        clock.set("2026-02-20")
+        let draft = try service.review(for: show, season: 1)
+        #expect(draft.noteTitle == "Test Show - Season 1")
+        #expect(draft.finishedOn == "2026-02-05")
+        #expect(draft.connectedTo == "Test Show")
+    }
+
+    @Test func movieDraftUsesWatchedDay() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-03-10")
+        mock.on("movie/100", Fixture.movie(release: "2026-03-06"))
+        let service = try makeService(mock, clock)
+        let movie = try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        #expect(try service.review(for: movie).finishedOn == "2026-03-10")
+        try service.setMovieWatched(movie, on: "2026-03-08")
+        let updated = try service.resolve(100, .movie)
+        #expect(try service.review(for: updated).finishedOn == "2026-03-08")
+        // refreshing from tmdb keeps the watched day
+        try await service.refresh(updated, ttl: 0)
+        #expect(try service.resolve(100, .movie).watchedOn == "2026-03-08")
+    }
+
+    @Test func sendWritesNoteIndexAndRefusesOverwrite() async throws {
+        let mock = MockTransport()
+        mock.on("tv/200", Fixture.tv(last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)]))
+        let service = try makeService(mock, Clock("2026-02-01"), config: config())
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        let vault = try tempVault()
+
+        var draft = try service.review(for: show, season: 1)
+        draft.rating = 4
+        draft.body = "Great season."
+        try service.saveReview(draft)
+
+        let (url, sent) = try await service.sendReview(draft, vault: vault)
+        #expect(url.path.hasSuffix("Culture/Television/Test Show - Season 1.md"))
+        #expect(sent.exportPath == "Culture/Television/Test Show - Season 1.md")
+        #expect(try String(contentsOf: url, encoding: .utf8).contains("Great season."))
+        let index = vault.appendingPathComponent("Culture/Indexes/Test Show.md")
+        #expect(try String(contentsOf: index, encoding: .utf8) == "---\ntype: Television\n---\n# Test Show\n")
+
+        // resending the same review updates it in place
+        var edited = sent
+        edited.body = "Even better on reflection."
+        _ = try await service.sendReview(edited, vault: vault)
+        #expect(try String(contentsOf: url, encoding: .utf8).contains("Even better"))
+
+        // a different review aimed at an existing note is refused unless overwrite is set
+        let other = Review(tmdbId: 999, mediaType: .tv, season: 1, noteTitle: "Test Show - Season 1")
+        await #expect(throws: ReviewError.noteExists(path: "Culture/Television/Test Show - Season 1.md", editedSince: false)) {
+            _ = try await service.sendReview(other, vault: vault)
+        }
+        _ = try await service.sendReview(other, overwrite: true, vault: vault)
+    }
+
+    @Test func movieSendFetchesImdbAndOmdb() async throws {
+        let mock = MockTransport()
+        mock.on("movie/100", Fixture.movie(release: "2025-05-02").replacingOccurrences(of: "\"poster_path\":\"/p.jpg\",", with: "\"poster_path\":\"/p.jpg\",\"imdb_id\":\"tt31193180\","))
+        let service = try makeService(mock, Clock("2026-02-01"), config: config())
+        let movie = try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        let omdbTransport = MockTransport()
+        omdbTransport.routes["/"] = [(200, #"{"Response":"True","imdbRating":"7.6","imdbVotes":"288,689","Metascore":"84","Ratings":[{"Source":"Internet Movie Database","Value":"7.6/10"},{"Source":"Rotten Tomatoes","Value":"97%"}]}"#)]
+        let omdb = OMDbClient(apiKey: "k", db: service.db, transport: omdbTransport)
+        var draft = try service.review(for: movie)
+        draft.rating = 4.5
+        let (url, _) = try await service.sendReview(draft, omdb: omdb, vault: try tempVault())
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(url.lastPathComponent == "Test Movie.md")
+        #expect(text.contains("imdb_link: https://www.imdb.com/title/tt31193180/"))
+        #expect(text.contains("rotten_tomatoes: 97%\nmy_rating_delta: -7"))
+    }
+
+    @Test func renamedNoteIsFoundByIdAndUpdatedInPlace() async throws {
+        let mock = MockTransport()
+        mock.on("tv/200", Fixture.tv(last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)]))
+        let service = try makeService(mock, Clock("2026-02-01"), config: config())
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        let vault = try tempVault()
+        var draft = try service.review(for: show, season: 1)
+        draft.body = "First take."
+        let (url, sent) = try await service.sendReview(draft, vault: vault)
+
+        // rename and move the note in "obsidian"
+        let movedDir = vault.appendingPathComponent("Culture/Television/Done")
+        try FileManager.default.createDirectory(at: movedDir, withIntermediateDirectories: true)
+        let renamed = movedDir.appendingPathComponent("Test Show.md")
+        try FileManager.default.moveItem(at: url, to: renamed)
+
+        let opened = try service.openURL(for: sent, vault: vault)
+        #expect(opened.review.exportPath == "Culture/Television/Done/Test Show.md")
+        #expect(opened.review.noteTitle == "Test Show")
+        #expect(opened.url.absoluteString.contains("Done/Test%20Show.md"))
+
+        var edited = opened.review
+        edited.body = "Second take."
+        let (url2, _) = try await service.sendReview(edited, vault: vault)
+        #expect(url2.path == renamed.path)
+        #expect(try String(contentsOf: renamed, encoding: .utf8).contains("Second take."))
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @Test func relinkStampsIdIntoExistingNote() throws {
+        let service = try makeService(MockTransport(), Clock("2026-02-01"), config: config())
+        let vault = try tempVault()
+        let dir = vault.appendingPathComponent("Culture/Television")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let note = dir.appendingPathComponent("Sample Show.md")
+        try "---\ntype: Television\nrating: 3\n---\n# Sample Show\n\nBody.\n".write(to: note, atomically: true, encoding: .utf8)
+
+        let r = Review(tmdbId: 4242, mediaType: .tv, season: 1, noteTitle: "Sample Show - Season 1",
+                       exportedAt: "2026-01-01T00:00:00Z", exportPath: "Culture/Television/Sample Show - Season 1.md")
+        #expect(throws: ReviewError.noteNotFound) { _ = try service.openURL(for: r, vault: vault) }
+        let linked = try service.relinkNote(r, file: note, vault: vault)
+        #expect(linked.exportPath == "Culture/Television/Sample Show.md")
+        #expect(try String(contentsOf: note, encoding: .utf8) == "---\ntype: Television\nrating: 3\nwatchlist_id: tv-4242-1\n---\n# Sample Show\n\nBody.\n")
+        #expect(try service.openURL(for: linked, vault: vault).review.exportPath == "Culture/Television/Sample Show.md")
+    }
+
+    @Test func missingVaultIsReported() async throws {
+        let service = try makeService(MockTransport(), Clock("2026-02-01"))
+        let r = Review(tmdbId: 1, mediaType: .movie, noteTitle: "X")
+        await #expect(throws: ReviewError.vaultMissing("/nonexistent/vault")) {
+            _ = try await service.sendReview(r, vault: URL(fileURLWithPath: "/nonexistent/vault"))
+        }
     }
 }

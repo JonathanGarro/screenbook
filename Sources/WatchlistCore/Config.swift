@@ -56,6 +56,13 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var notifyMovieReleases: Bool = true
     /// while the app is running, check again once the last check is this old
     public var periodicCheck: Bool = true
+    /// obsidian vault folder; empty means use the vault obsidian reports as open
+    public var obsidianVaultPath: String = ""
+    /// folders inside the vault for movie and season notes
+    public var obsidianFilmFolder: String = "Film"
+    public var obsidianTVFolder: String = "Television"
+    /// where show index notes live; empty skips creating them
+    public var obsidianIndexFolder: String = ""
 
     public init(region: String = "US", streamingEnabled: Bool = false, includeRentBuy: Bool = false,
                 checkOnLaunch: Bool = true, showInMenuBar: Bool = true,
@@ -80,6 +87,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         notifyNewEpisodes = (try? c.decode(Bool.self, forKey: .notifyNewEpisodes)) ?? true
         notifyMovieReleases = (try? c.decode(Bool.self, forKey: .notifyMovieReleases)) ?? true
         periodicCheck = (try? c.decode(Bool.self, forKey: .periodicCheck)) ?? true
+        obsidianVaultPath = (try? c.decode(String.self, forKey: .obsidianVaultPath)) ?? ""
+        obsidianFilmFolder = (try? c.decode(String.self, forKey: .obsidianFilmFolder)) ?? "Film"
+        obsidianTVFolder = (try? c.decode(String.self, forKey: .obsidianTVFolder)) ?? "Television"
+        obsidianIndexFolder = (try? c.decode(String.self, forKey: .obsidianIndexFolder)) ?? ""
     }
 }
 
@@ -105,20 +116,23 @@ public enum ConfigStore {
 /// the key is never stored in source. lookup order: TMDB_API_KEY env var, then .env in the data folder.
 public enum APIKeyStore {
     public static let variableName = "TMDB_API_KEY"
+    public static let omdbVariableName = "OMDB_API_KEY"
 
-    public static func resolve(_ paths: AppPaths, environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
-        if let value = environment[variableName]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+    public static func resolve(_ paths: AppPaths, name: String = variableName,
+                               environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        if let value = environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
             return value
         }
         if let text = try? String(contentsOf: paths.envURL, encoding: .utf8),
-           let value = parseEnv(text)[variableName], !value.isEmpty {
+           let value = parseEnv(text)[name], !value.isEmpty {
             return value
         }
         return nil
     }
 
     /// writes the key to the data folder .env with owner-only permissions
-    public static func save(_ key: String, _ paths: AppPaths) throws {
+    public static func save(_ key: String, _ paths: AppPaths, name: String = variableName) throws {
+        let variableName = name
         try paths.ensureDirectories()
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         var lines: [String] = []
