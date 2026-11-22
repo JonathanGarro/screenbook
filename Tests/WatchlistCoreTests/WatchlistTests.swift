@@ -1081,3 +1081,38 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         _ = show
     }
 }
+
+
+// insights
+
+@Suite struct InsightsTests {
+    @Test func pointsJoinNoteScoresAndGenres() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("insight-vault-\(UUID().uuidString)")
+        let notes = [
+            "Film/A.md": "---\ntype: Film\nrating: 4.5\nimdb_rating: '7.6'\nrotten_tomatoes: 97%\nwatchlist_id: movie-1-0\n---\n# A\n",
+            "Film/B.md": "---\ntype: Film\nrating: 2\nimdb_rating:\nrotten_tomatoes:\nwatchlist_id: movie-2-0\n---\n# B\n",
+            "Film/C.md": "---\ntype: Film\nrating:\nimdb_rating: '6.0'\nwatchlist_id: movie-3-0\n---\n# C\n",
+        ]
+        for (p, t) in notes {
+            let u = root.appendingPathComponent(p)
+            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try t.write(to: u, atomically: true, encoding: .utf8)
+        }
+        let mock = MockTransport()
+        mock.on("movie/1", #"{"id":1,"title":"A","genres":[{"id":27,"name":"Horror"},{"id":53,"name":"Thriller"}]}"#)
+        var c = AppConfig(); c.obsidianFilmFolder = "Film"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        for (id, t) in [(1, "A"), (2, "B"), (3, "C")] {
+            try service.saveReview(Review(tmdbId: id, mediaType: .movie, noteTitle: t, exportedAt: "2026-01-01T00:00:00Z", exportPath: "Film/\(t).md"))
+        }
+        let points = try await service.ratingPoints(vault: root)
+        #expect(points.count == 1)
+        let a = points[0]
+        #expect(a.genres == ["Horror", "Thriller"])
+        #expect(a.mine == 90)
+        #expect(a.external(.rottenTomatoes) == 97)
+        #expect(a.external(.imdb) == 76)
+        #expect(a.delta(.rottenTomatoes) == -7)
+        #expect(abs((a.delta(.imdb) ?? 0) - 14) < 0.001)
+    }
+}

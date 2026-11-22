@@ -131,6 +131,12 @@ public struct MovieDetails: Decodable, Sendable {
     public let imdbId: String?
     public let releaseDates: ReleaseDates?
     public let belongsToCollection: CollectionRef?
+    public let genres: [Genre]?
+}
+
+public struct Genre: Decodable, Sendable, Hashable {
+    public let id: Int
+    public let name: String
 }
 
 public struct CollectionRef: Decodable, Sendable {

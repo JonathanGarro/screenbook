@@ -135,7 +135,7 @@ struct ReviewEditor: View {
             if baseline == nil && model.hasSavedReview(review) { baseline = review }
             if review.isSent {
                 let before = review
-                let (synced, state) = model.syncOne(review)
+                let (synced, state) = await model.syncOne(review)
                 syncState = state
                 if synced != before {
                     review = synced
@@ -170,11 +170,13 @@ struct ReviewEditor: View {
         case .conflict:
             banner("This review was edited in Obsidian, and it also has unsent edits here.", color: .orange) {
                 Button("Use Obsidian Version") {
-                    let (synced, state) = model.syncOne(review, force: true)
-                    review = synced
-                    baseline = synced
-                    syncState = state
-                    pulledFromNote = true
+                    Task {
+                        let (synced, state) = await model.syncOne(review, force: true)
+                        review = synced
+                        baseline = synced
+                        syncState = state
+                        pulledFromNote = true
+                    }
                 }
                 Button("Keep Mine") { syncState = .inSync }
             }
@@ -400,7 +402,7 @@ struct ReviewsList: View {
                     HStack {
                         Text(syncLabel).font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Sync from Obsidian") { model.syncReviews(force: true) }
+                        Button("Sync from Obsidian") { Task { await model.syncReviews(force: true) } }
                             .buttonStyle(.link)
                             .font(.caption)
                     }

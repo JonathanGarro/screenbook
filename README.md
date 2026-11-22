@@ -112,6 +112,14 @@ The note is the master copy. Watchlist syncs on launch, whenever you switch back
 
 `watchlist audit-series` (a dry run unless `--apply`) adds a blank `film_series_index` to every movie and TV note missing it, right after `connected_to`, and fills blank indexes from TMDB collections. Values you already set are never changed; ones that differ from TMDB's order are listed. `--skip "Note A,Note B"` leaves chosen notes blank, and `--keys-only` only adds the missing property. TMDB collections sometimes include spin-offs or unofficial entries, so review the list before applying.
 
+### Insights
+
+**Insights** in the sidebar plots every rated movie review: your rating across (0 to 5 stars, scaled to 0 to 100) against an outside score up (Rotten Tomatoes critics score or IMDb user rating, toggled at the top). On the dashed 45 degree line you agree; below it you liked the movie more, above it less. The plot is always square.
+
+- Dots are colored by your three most common primary genres, with the rest in gray. A scatter plot only keeps three colors distinguishable for color-blind readers, so the **Genre** menu highlights any single genre instead of adding colors.
+- Hover a dot for the title, both scores, and the gap; click it to open the review. The list beside the chart shows the same movies, sortable by biggest difference, liked more, liked less, or title.
+- Scores come from your notes' `imdb_rating` and `rotten_tomatoes` properties (see Fill IMDb and Rotten Tomatoes), genres from TMDB. TV seasons are not plotted because their notes have no outside scores.
+
 ### Importing existing reviews
 
 Already have review notes in Obsidian? **Watchlist > Import Reviews from Obsidian...** (or `watchlist import-reviews`) links them:
@@ -330,6 +338,7 @@ Sources/WatchlistCore/        shared logic
   Import.swift                importing existing obsidian review notes
   Sync.swift                  pulling obsidian edits back into reviews
   Series.swift                series index from tmdb collections
+  Insights.swift              data for the ratings comparison chart
 Sources/WatchlistApp/         swiftui app
 Sources/watchlist/main.swift  cli
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)

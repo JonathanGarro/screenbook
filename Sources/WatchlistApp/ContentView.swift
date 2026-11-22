@@ -25,13 +25,17 @@ struct ContentView: View {
                     WhatsNewList()
                 } else if model.selection == .reviews {
                     ReviewsList()
+                } else if model.selection == .insights {
+                    InsightsTable()
                 } else {
                     TitleList(items: model.items(for: model.selection ?? .all))
                 }
             }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360)
         } detail: {
-            if let t = model.title(model.selectedTitleID) {
+            if model.selection == .insights {
+                InsightsView()
+            } else if let t = model.title(model.selectedTitleID) {
                 TitleDetailView(title: t)
                     .id(t.id)
             } else {

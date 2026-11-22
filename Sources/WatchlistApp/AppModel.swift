@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, movies, shows, all, stopped, reviews
+    case whatsNew, upcoming, unwatched, movies, shows, all, stopped, reviews, insights
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .all: return "Everything"
         case .stopped: return "Stopped"
         case .reviews: return "Reviews"
+        case .insights: return "Insights"
         }
     }
 
@@ -34,6 +35,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .all: return "square.stack"
         case .stopped: return "pause.circle"
         case .reviews: return "star.bubble"
+        case .insights: return "chart.dots.scatter"
         }
     }
 }
@@ -57,6 +59,11 @@ final class AppModel {
     var showingImport = false
     var showingFillRatings = false
     var reviewStates: [String: ReviewSyncState] = [:]
+    var insightPoints: [RatingPoint] = []
+    var insightSource: RatingSource = .rottenTomatoes
+    var insightGenre: String?
+    var insightsLoading = false
+    var insightsProgress = ""
     var lastReviewSync: Date?
     private var activeObserver: NSObjectProtocol?
     var report: CheckReport?
@@ -75,6 +82,10 @@ final class AppModel {
 
     init() {
         open()
+        // launch argument for opening on a given sidebar item, e.g. -startSelection insights
+        if let start = UserDefaults.standard.string(forKey: "startSelection"), let item = SidebarItem(rawValue: start) {
+            selection = item
+        }
     }
 
     var paths: AppPaths { service?.paths ?? .standard() }
@@ -139,7 +150,7 @@ final class AppModel {
         let day = today
         let tracked = titles.filter { !$0.isStopped }
         switch item {
-        case .whatsNew, .reviews:
+        case .whatsNew, .reviews, .insights:
             return []
         case .upcoming:
             return tracked.filter { $0.nextDate(today: day) != nil }
@@ -181,11 +192,11 @@ final class AppModel {
         guard !didLaunchCheck else { return }
         didLaunchCheck = true
         startPeriodicChecks()
-        syncReviews()
+        Task { await syncReviews() }
         // pick up obsidian edits whenever the user switches back to watchlist
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.syncReviews() }
+            Task { @MainActor in await self?.syncReviews() }
         }
         if config.notifyNewEpisodes || config.notifyMovieReleases {
             await Notifier.requestAuthorization()
@@ -369,13 +380,14 @@ final class AppModel {
     // reviews
 
     /// pulls obsidian edits into every sent review. skipped if it ran in the last few seconds unless forced.
+    /// vault reads run off the main thread, so a slow disk or a pending macOS permission prompt never freezes the window
     @discardableResult
-    func syncReviews(force: Bool = false) -> SyncSummary? {
+    func syncReviews(force: Bool = false) async -> SyncSummary? {
         guard let service, ObsidianVault.resolve(config) != nil, reviews.contains(where: \.isSent) || force else { return nil }
         if !force, let last = lastReviewSync, Date().timeIntervalSince(last) < 10 { return nil }
         lastReviewSync = Date()
         do {
-            let summary = try service.syncReviewsFromObsidian()
+            let summary = try await Task.detached { try service.syncReviewsFromObsidian() }.value
             reviewStates = summary.states
             if !summary.pulled.isEmpty { reload() }
             return summary
@@ -385,16 +397,58 @@ final class AppModel {
     }
 
     /// syncs one review, for the editor. force makes the note win over unsent edits.
-    func syncOne(_ r: Review, force: Bool = false) -> (Review, ReviewSyncState) {
+    func syncOne(_ r: Review, force: Bool = false) async -> (Review, ReviewSyncState) {
         guard let service, r.isSent else { return (r, .inSync) }
         do {
-            let result = try service.syncReview(r, force: force)
+            let result = try await Task.detached { try service.syncReview(r, force: force) }.value
             reviewStates[r.id] = result.state
             if result.pulled || result.review != r { reload() }
             return (result.review, result.state)
         } catch {
             return (r, reviewStates[r.id] ?? .inSync)
         }
+    }
+
+    /// loads ratings and genres for the insights chart
+    func loadInsights(force: Bool = false) async {
+        guard let service, !insightsLoading, force || insightPoints.isEmpty else { return }
+        insightsLoading = true
+        insightsProgress = "Reading your reviews..."
+        defer { insightsLoading = false }
+        do {
+            insightPoints = try await service.ratingPoints { done, total in
+                Task { @MainActor in self.insightsProgress = "Loading \(done) of \(total)" }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        insightsLoading = false
+        renderInsightsIfRequested()
+    }
+
+    /// debug: -renderInsightsTo /path.png writes the insights view to an image (light and dark), for layout checks
+    private func renderInsightsIfRequested() {
+        guard let path = UserDefaults.standard.string(forKey: "renderInsightsTo") else { return }
+        for (suffix, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+            let view = InsightsContent(hover: HoverState())
+                .environment(self)
+                .frame(width: 1100)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            NSApp.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-\(suffix).png")))
+            }
+        }
+        NSApp.appearance = nil
+    }
+
+    /// opens the editor for a review by id
+    func openReview(id: String) {
+        if let r = reviews.first(where: { $0.id == id }) { editingReview = r }
     }
 
     func existingReview(_ t: Title, season: Int = 0) -> Review? {
