@@ -54,6 +54,9 @@ final class AppModel {
     var editingReview: Review?
     var showingImport = false
     var showingFillRatings = false
+    var reviewStates: [String: ReviewSyncState] = [:]
+    var lastReviewSync: Date?
+    private var activeObserver: NSObjectProtocol?
     var report: CheckReport?
     var selection: SidebarItem? = .whatsNew
     var selectedTitleID: String?
@@ -172,6 +175,12 @@ final class AppModel {
         guard !didLaunchCheck else { return }
         didLaunchCheck = true
         startPeriodicChecks()
+        syncReviews()
+        // pick up obsidian edits whenever the user switches back to watchlist
+        activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
+                                                                object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.syncReviews() }
+        }
         if config.notifyNewEpisodes || config.notifyMovieReleases {
             await Notifier.requestAuthorization()
         }
@@ -343,6 +352,35 @@ final class AppModel {
 
     // reviews
 
+    /// pulls obsidian edits into every sent review. skipped if it ran in the last few seconds unless forced.
+    @discardableResult
+    func syncReviews(force: Bool = false) -> SyncSummary? {
+        guard let service, ObsidianVault.resolve(config) != nil, reviews.contains(where: \.isSent) || force else { return nil }
+        if !force, let last = lastReviewSync, Date().timeIntervalSince(last) < 10 { return nil }
+        lastReviewSync = Date()
+        do {
+            let summary = try service.syncReviewsFromObsidian()
+            reviewStates = summary.states
+            if !summary.pulled.isEmpty { reload() }
+            return summary
+        } catch {
+            return nil
+        }
+    }
+
+    /// syncs one review, for the editor. force makes the note win over unsent edits.
+    func syncOne(_ r: Review, force: Bool = false) -> (Review, ReviewSyncState) {
+        guard let service, r.isSent else { return (r, .inSync) }
+        do {
+            let result = try service.syncReview(r, force: force)
+            reviewStates[r.id] = result.state
+            if result.pulled || result.review != r { reload() }
+            return (result.review, result.state)
+        } catch {
+            return (r, reviewStates[r.id] ?? .inSync)
+        }
+    }
+
     func existingReview(_ t: Title, season: Int = 0) -> Review? {
         let s = t.mediaType == .movie ? 0 : season
         return reviews.first { $0.tmdbId == t.tmdbId && $0.mediaType == t.mediaType && $0.season == s }
@@ -355,7 +393,19 @@ final class AppModel {
     func openReview(_ t: Title, season: Int = 0) {
         guard let service else { return }
         do {
-            editingReview = try service.review(for: t, season: season)
+            var draft = try service.review(for: t, season: season)
+            let isNew = !reviews.contains { $0.id == draft.id }
+            editingReview = draft
+            // new movie drafts get their place in a tmdb collection, e.g. 3 for the third film
+            if isNew && t.mediaType == .movie {
+                Task {
+                    if let pos = try? await service.seriesPosition(tmdbId: t.tmdbId), editingReview?.id == draft.id,
+                       editingReview?.seriesIndex == nil {
+                        draft.seriesIndex = pos.index
+                        editingReview = draft
+                    }
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -363,7 +413,7 @@ final class AppModel {
 
     func saveReview(_ r: Review) {
         do {
-            try service?.saveReview(r)
+            try service?.saveReview(r, markEdited: true)
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -382,7 +432,9 @@ final class AppModel {
     func sendReview(_ r: Review, overwrite: Bool) async throws -> (url: URL, review: Review) {
         guard let service else { throw ReviewError.noVault }
         defer { reload() }
-        return try await service.sendReview(r, overwrite: overwrite)
+        let result = try await service.sendReview(r, overwrite: overwrite)
+        reviewStates[r.id] = .inSync
+        return result
     }
 
     /// finds the note by its watchlist_id and opens it; returns the review with its current path and title
@@ -397,6 +449,7 @@ final class AppModel {
     func relinkNote(_ r: Review, file: URL) throws -> Review {
         guard let service else { throw ReviewError.noVault }
         let updated = try service.relinkNote(r, file: file)
+        reviewStates[r.id] = .inSync
         reload()
         return updated
     }

@@ -163,6 +163,8 @@ public struct Review: Codable, Hashable, Identifiable, Sendable {
     public var exportedAt: String?
     public var exportPath: String?
     public var updatedAt: String
+    /// saved in watchlist after it was last sent, so the note does not have these edits yet
+    public var localEdits: Bool = false
 
     public var id: String { "\(mediaType.rawValue)-\(tmdbId)-\(season)" }
     public var isSent: Bool { exportPath != nil }

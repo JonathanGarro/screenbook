@@ -344,6 +344,19 @@ public enum ObsidianNote {
         return (front + (hadFrontmatter ? body : text), changed)
     }
 
+    /// adds a blank property if the note lacks it, right after `after` when present, else at the end
+    public static func ensureProperty(_ text: String, key: String, after: String? = nil) -> String? {
+        var (props, body) = parse(text)
+        guard text.hasPrefix("---"), !props.contains(where: { $0.key == key }) else { return nil }
+        let new = Property(key: key, lines: ["\(key):"])
+        if let after, let i = props.firstIndex(where: { $0.key == after }) {
+            props.insert(new, at: i + 1)
+        } else {
+            props.append(new)
+        }
+        return "---\n" + props.flatMap(\.lines).joined(separator: "\n") + "\n---\n" + body
+    }
+
     /// the property values a note stores for external ratings, in the vault's existing format
     public static func ratingProperties(imdbId: String?, ratings: ExternalRatings?, rating: Double?) -> [(String, String)] {
         var out: [(String, String)] = []
@@ -499,8 +512,10 @@ extension WatchlistService {
         return regular.count == 1 && regular[0].name?.caseInsensitiveCompare("Miniseries") == .orderedSame
     }
 
-    public func saveReview(_ r: Review) throws {
+    /// markEdited is for saves the user makes in watchlist; on a sent review it records unsent edits
+    public func saveReview(_ r: Review, markEdited: Bool = false) throws {
         var r = r
+        if markEdited && r.isSent { r.localEdits = true }
         r.updatedAt = DateText.timestamp(now())
         try db.upsertReview(r)
     }
@@ -630,6 +645,7 @@ extension WatchlistService {
         }
 
         var saved = review
+        saved.localEdits = false
         saved.exportPath = relative
         saved.exportedAt = DateText.timestamp(Date().addingTimeInterval(1))
         try saveReview(saved)

@@ -149,6 +149,10 @@ public final class Database: @unchecked Sendable {
         if !cols.contains("watched_on") {
             try exec("alter table titles add column watched_on text;")
         }
+        let reviewCols = try query("pragma table_info(reviews)").compactMap { $0.string("name") }
+        if !reviewCols.contains("local_edits") {
+            try exec("alter table reviews add column local_edits integer not null default 0;")
+        }
         if !cols.contains("series_type") {
             try exec("alter table titles add column series_type text;")
         }
@@ -401,12 +405,13 @@ extension Database {
     public func upsertReview(_ r: Review) throws {
         try execute("""
             insert or replace into reviews (tmdb_id, media_type, season, note_title, rating, finished_on, body,
-                rewatch, connected_to, series_index, exported_at, export_path, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                rewatch, connected_to, series_index, exported_at, export_path, updated_at, local_edits)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 .of(r.tmdbId), .text(r.mediaType.rawValue), .of(r.season), .text(r.noteTitle),
                 r.rating.map { .double($0) } ?? .null, .of(r.finishedOn), .text(r.body), .of(r.rewatch),
                 .of(r.connectedTo), .of(r.seriesIndex), .of(r.exportedAt), .of(r.exportPath), .text(r.updatedAt),
+                .of(r.localEdits),
             ])
     }
 
@@ -434,7 +439,7 @@ extension Database {
         var rating: Double?
         if case .double(let v) = r["rating"] { rating = v }
         if case .int(let v) = r["rating"] { rating = Double(v) }
-        return Review(
+        var review = Review(
             tmdbId: r.int("tmdb_id") ?? 0,
             mediaType: MediaType(rawValue: r.string("media_type") ?? "movie") ?? .movie,
             season: r.int("season") ?? 0,
@@ -449,5 +454,7 @@ extension Database {
             exportPath: r.string("export_path"),
             updatedAt: r.string("updated_at") ?? ""
         )
+        review.localEdits = r.bool("local_edits")
+        return review
     }
 }

@@ -130,6 +130,18 @@ public struct MovieDetails: Decodable, Sendable {
     public let posterPath: String?
     public let imdbId: String?
     public let releaseDates: ReleaseDates?
+    public let belongsToCollection: CollectionRef?
+}
+
+public struct CollectionRef: Decodable, Sendable {
+    public let id: Int
+    public let name: String
+}
+
+public struct CollectionDetails: Decodable, Sendable {
+    public let id: Int
+    public let name: String
+    public let parts: [SearchResult]
 }
 
 public struct EpisodeSummary: Decodable, Sendable {
@@ -340,6 +352,12 @@ public actor TMDBClient {
     public func movie(_ id: Int, ttl: TimeInterval = CacheTTL.details) async throws -> MovieDetails {
         let data = try await get("movie/\(id)", query: ["append_to_response": "release_dates", "language": "en-US"], ttl: ttl)
         return try decode(MovieDetails.self, data)
+    }
+
+    /// a tmdb collection (e.g. "Dune Collection") with its films
+    public func collection(_ id: Int) async throws -> CollectionDetails {
+        let data = try await get("collection/\(id)", query: ["language": "en-US"], ttl: CacheTTL.search)
+        return try decode(CollectionDetails.self, data)
     }
 
     public func tv(_ id: Int, ttl: TimeInterval = CacheTTL.details) async throws -> TVDetails {

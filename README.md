@@ -97,6 +97,20 @@ Setup is in Settings, Obsidian Reviews:
 - **Show index folder**: if set, a minimal index note (`type: Television`, `# Show`) is created there when a season links to a show that has none.
 - **OMDb key** (optional, free at omdbapi.com): fills `imdb_rating`, `imdb_votes`, `metascore`, `rotten_tomatoes`, and `my_rating_delta` (rating x 20 minus the Rotten Tomatoes percentage). Without it those fields are left blank. `imdb_id` and `imdb_link` come from TMDB either way. The key is stored as `OMDB_API_KEY` in the same `.env` file.
 
+### Editing in Obsidian
+
+The note is the master copy. Watchlist syncs on launch, whenever you switch back to it, when you open a review, and from **Sync from Obsidian** (Reviews list, Watchlist menu, or `watchlist sync-reviews`). If a note changed since Watchlist last wrote it, Watchlist pulls in its title, rating, finished date, rewatch, connected to, series index, and text, so **Update in Obsidian** always starts from your latest version.
+
+- If you also saved unsent edits in Watchlist (Save Draft on a sent review), the review is marked **Changed in both**; open it and choose **Use Obsidian Version** or **Keep Mine**.
+- A review whose note was deleted is marked **Note missing**, with **Locate Note...** and **Remove from Watchlist**. Nothing is deleted automatically.
+- Renames and moves are followed through `watchlist_id`.
+
+### Series index
+
+`film_series_index` is a film's place in its franchise by release order (Dune - Part Two is 2). New movie drafts get it pre-filled from the film's TMDB collection; change it in the editor for franchises you number your own way.
+
+`watchlist audit-series` (a dry run unless `--apply`) adds a blank `film_series_index` to every movie and TV note missing it, right after `connected_to`, and fills blank indexes from TMDB collections. Values you already set are never changed; ones that differ from TMDB's order are listed. `--skip "Note A,Note B"` leaves chosen notes blank, and `--keys-only` only adds the missing property. TMDB collections sometimes include spin-offs or unofficial entries, so review the list before applying.
+
 ### Importing existing reviews
 
 Already have review notes in Obsidian? **Watchlist > Import Reviews from Obsidian...** (or `watchlist import-reviews`) links them:
@@ -132,6 +146,8 @@ watchlist watch <tmdb_id> --all-up-to <season> <episode>
 watchlist available <tmdb_id> on|off
 watchlist import-reviews [--apply] [--include-check] [--add-shows on|off]
 watchlist fill-ratings [--apply] [--refresh]
+watchlist sync-reviews
+watchlist audit-series [--apply] [--keys-only] [--skip "Note A,Note B"]
 watchlist digest [--force]
 watchlist export
 watchlist config [--region XX] [--streaming on|off] [--rent-buy on|off] [--check-on-open on|off] [--menu-bar on|off] [--notify on|off] [--notify-movies on|off] [--periodic on|off] [--api-key KEY]
@@ -166,7 +182,7 @@ Open `watchlist.db` in any SQLite client.
 - `titles`: `tmdb_id`, `media_type` ('movie' or 'tv'), `title`, `year`, `region_release_date`, `added_on`, plus `digital_release_date`, `status`, `overview`, `poster_path`, `last_aired_season/episode/date`, `next_air_season/episode/date`, `seen_season/episode` (the latest aired episode at the previous check), `release_flagged` (movie release already reported), `last_refreshed`, `watched_on` (movies), `all_available` (tv streaming drop override). Primary key is (`tmdb_id`, `media_type`).
 - `watched_episodes`: `tmdb_id`, `season`, `episode`, `watched_on`.
 - `seasons`: `tmdb_id`, `season_number`, `episode_count`, `air_date`, `name`. Copied from the series details call; used to work out which episodes have aired.
-- `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`.
+- `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`, `local_edits` (saved in Watchlist since the last send).
 - `api_cache`: `cache_key` (path plus sorted query, never the key), `body` (raw JSON), `fetched_at`.
 - `meta`: `last_check` timestamp and `last_report` (the last check result as JSON).
 
@@ -309,6 +325,8 @@ Sources/WatchlistCore/        shared logic
   Digest.swift                markdown digest, text tables, csv, attribution
   Reviews.swift               review drafts, obsidian note format and export, omdb
   Import.swift                importing existing obsidian review notes
+  Sync.swift                  pulling obsidian edits back into reviews
+  Series.swift                series index from tmdb collections
 Sources/WatchlistApp/         swiftui app
 Sources/watchlist/main.swift  cli
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)

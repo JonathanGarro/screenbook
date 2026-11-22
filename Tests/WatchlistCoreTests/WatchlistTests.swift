@@ -925,3 +925,124 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(done == notes["Film/Done.md"])
     }
 }
+
+// sync from obsidian
+
+@Suite struct SyncTests {
+    func setup() async throws -> (WatchlistService, URL, Review, URL) {
+        let mock = MockTransport()
+        mock.on("tv/200", Fixture.tv(last: (1, 3, "2026-01-25"), next: nil, seasons: [(1, 3)]))
+        var c = AppConfig(); c.obsidianFilmFolder = "Film"; c.obsidianTVFolder = "TV"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        let vault = FileManager.default.temporaryDirectory.appendingPathComponent("sync-vault-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        var draft = try service.review(for: show, season: 1)
+        draft.rating = 3
+        draft.body = "First take."
+        let (url, sent) = try await service.sendReview(draft, vault: vault)
+        return (service, vault, sent, url)
+    }
+
+    func editInObsidian(_ url: URL, _ change: (String) -> String) throws {
+        let text = try String(contentsOf: url, encoding: .utf8)
+        try change(text).write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(30)], ofItemAtPath: url.path)
+    }
+
+    @Test func untouchedNoteIsInSync() async throws {
+        let (service, vault, sent, _) = try await setup()
+        let r = try service.syncReview(sent, vault: vault)
+        #expect(r.state == .inSync && !r.pulled)
+    }
+
+    @Test func obsidianEditsArePulledIn() async throws {
+        let (service, vault, sent, url) = try await setup()
+        try editInObsidian(url) {
+            $0.replacingOccurrences(of: "rating: 3\n", with: "rating: 4.5\n")
+              .replacingOccurrences(of: "First take.", with: "Second take, much better.")
+              .replacingOccurrences(of: "rewatch: false", with: "rewatch: true")
+        }
+        let summary = try service.syncReviewsFromObsidian(vault: vault)
+        #expect(summary.pulled == ["Test Show - Season 1"])
+        let stored = try service.db.review(tmdbId: 200, mediaType: .tv, season: 1)!
+        #expect(stored.rating == 4.5)
+        #expect(stored.body == "Second take, much better.")
+        #expect(stored.rewatch)
+
+        // updating from watchlist now writes over the pulled version without a conflict prompt
+        var edited = stored
+        edited.body = "Third take."
+        _ = try await service.sendReview(edited, vault: vault)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(text.contains("Third take.") && text.contains("rating: 4.5"))
+    }
+
+    @Test func renamedNoteUpdatesTitleAndPath() async throws {
+        let (service, vault, sent, url) = try await setup()
+        let renamed = url.deletingLastPathComponent().appendingPathComponent("Test Show.md")
+        try FileManager.default.moveItem(at: url, to: renamed)
+        let r = try service.syncReview(sent, index: try service.noteIndex(vault: vault), vault: vault)
+        #expect(r.review.noteTitle == "Test Show")
+        #expect(r.review.exportPath == "TV/Test Show.md")
+    }
+
+    @Test func unsentWatchlistEditsAreNotOverwritten() async throws {
+        let (service, vault, sent, _) = try await setup()
+        var local = sent
+        local.body = "Draft edit in Watchlist."
+        try service.saveReview(local, markEdited: true)
+        let saved = try service.db.review(tmdbId: 200, mediaType: .tv, season: 1)!
+        let r = try service.syncReview(saved, vault: vault)
+        #expect(r.state == .inSync && !r.pulled)
+        #expect(try service.db.review(tmdbId: 200, mediaType: .tv, season: 1)!.body == "Draft edit in Watchlist.")
+    }
+
+    @Test func editsOnBothSidesAreAConflictUntilChosen() async throws {
+        let (service, vault, sent, url) = try await setup()
+        var local = sent
+        local.body = "Draft edit in Watchlist."
+        try service.saveReview(local, markEdited: true)
+        try editInObsidian(url) { $0.replacingOccurrences(of: "First take.", with: "Obsidian edit.") }
+        let saved = try service.db.review(tmdbId: 200, mediaType: .tv, season: 1)!
+        #expect(try service.syncReview(saved, vault: vault).state == .conflict)
+        #expect(try service.syncReviewsFromObsidian(vault: vault).conflicts == ["Test Show - Season 1"])
+        let forced = try service.syncReview(saved, force: true, vault: vault)
+        #expect(forced.pulled && forced.review.body == "Obsidian edit.")
+        #expect(try service.syncReview(forced.review, vault: vault).state == .inSync)
+    }
+
+    @Test func deletedNoteIsMissing() async throws {
+        let (service, vault, sent, url) = try await setup()
+        try FileManager.default.removeItem(at: url)
+        let summary = try service.syncReviewsFromObsidian(vault: vault)
+        #expect(summary.missing == ["Test Show - Season 1"])
+        #expect(summary.states[sent.id] == .missing)
+        #expect(try service.db.review(tmdbId: 200, mediaType: .tv, season: 1) != nil)
+    }
+}
+
+
+// series index
+
+@Suite struct SeriesTests {
+    @Test func ensurePropertyGoesAfterConnectedTo() {
+        let text = "---\ntype: Film\nconnected_to: \"[[Dune]]\"\nrating: 4\n---\n# Dune\n"
+        #expect(ObsidianNote.ensureProperty(text, key: "film_series_index", after: "connected_to")
+                == "---\ntype: Film\nconnected_to: \"[[Dune]]\"\nfilm_series_index:\nrating: 4\n---\n# Dune\n")
+        #expect(ObsidianNote.ensureProperty("---\nfilm_series_index: 2\n---\n", key: "film_series_index") == nil)
+    }
+
+    @Test func positionCountsReleasedFilmsInOrder() async throws {
+        let mock = MockTransport()
+        mock.on("movie/2", #"{"id":2,"title":"Part Two","belongs_to_collection":{"id":9,"name":"Dune Collection"}}"#)
+        mock.on("movie/5", #"{"id":5,"title":"Solo","belongs_to_collection":null}"#)
+        mock.on("collection/9", #"{"id":9,"name":"Dune Collection","parts":[{"id":3,"title":"Part Three","release_date":"2026-12-18"},{"id":2,"title":"Part Two","release_date":"2024-02-27"},{"id":1,"title":"Part One","release_date":"2021-09-15"}]}"#)
+        let service = try makeService(mock, Clock("2026-11-22"))
+        let pos = try await service.seriesPosition(tmdbId: 2)
+        #expect(pos?.collection == "Dune")
+        #expect(pos?.index == 2)
+        #expect(pos?.of == 2)
+        #expect(try await service.seriesPosition(tmdbId: 5) == nil)
+    }
+}

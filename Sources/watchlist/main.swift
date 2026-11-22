@@ -17,6 +17,9 @@ commands:
   import-reviews [--apply] [--include-check] [--add-shows on|off]
                                                link existing obsidian review notes (dry run unless --apply)
   fill-ratings [--apply] [--refresh]           fill imdb, metascore, rotten tomatoes in linked movie notes (dry run unless --apply)
+  sync-reviews                                 pull obsidian edits into watchlist's reviews
+  audit-series [--apply] [--keys-only] [--skip "Note A,Note B"]
+                                               add film_series_index to notes and fill it from tmdb collections
   digest [--force]                             write outputs/digest.md and print it
   export                                       write outputs/watchlist.csv
   config [--region XX] [--streaming on|off] [--rent-buy on|off]
@@ -258,6 +261,41 @@ do {
         if !s.noteMissing.isEmpty { print("Note not found: " + s.noteMissing.sorted().joined(separator: ", ")) }
         s.errors.forEach { print("Error: \($0)") }
         if !apply { print("\nDry run. Nothing was written. Run with --apply to write.") }
+
+    case "audit-series":
+        let apply = takeFlag(&args, "--apply")
+        let keysOnly = takeFlag(&args, "--keys-only")
+        let skip = Set((takeOption(&args, "--skip") ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        let audit = try await service.auditSeries(dryRun: !apply, keysOnly: keysOnly) { done, total in
+            if done % 100 == 0 || done == total { print("  \(done)/\(total)") }
+        }
+        print("")
+        print("\(apply ? "Added" : "Would add") a blank film_series_index to \(audit.keysAdded.count) notes: \(audit.keysAdded.sorted().joined(separator: ", "))")
+        print("")
+        print("Blank index, in a TMDB collection (\(audit.toFill.count)):")
+        for f in audit.toFill { print("  \(f.noteTitle): \(f.suggested) of \(f.of) in \(f.collection)") }
+        if !audit.differs.isEmpty {
+            print("")
+            print("Filled, but TMDB order differs (left as is, \(audit.differs.count)):")
+            for f in audit.differs { print("  \(f.noteTitle): note has \(f.current!), TMDB release order \(f.suggested) of \(f.of) in \(f.collection)") }
+        }
+        print("")
+        print("Already matching: \(audit.matching). Not in a collection: \(audit.notInCollection).")
+        audit.errors.forEach { print("Error: \($0)") }
+        if apply && !keysOnly {
+            let filled = try service.applySeries(audit.toFill.filter { !skip.contains($0.noteTitle) })
+            print("Filled \(filled.count) indexes\(skip.isEmpty ? "" : ", skipped \(skip.count)").")
+        } else {
+            print("Dry run. Nothing was written. Run with --apply to add the keys and fill the blanks.")
+        }
+
+    case "sync-reviews":
+        let s = try service.syncReviewsFromObsidian()
+        print("Checked \(s.checked) reviews. Pulled \(s.pulled.count) from Obsidian.")
+        if !s.pulled.isEmpty { print("  " + s.pulled.sorted().joined(separator: "\n  ")) }
+        if !s.conflicts.isEmpty { print("Changed in both places (open in the app to choose): " + s.conflicts.sorted().joined(separator: ", ")) }
+        if !s.missing.isEmpty { print("Note missing: " + s.missing.sorted().joined(separator: ", ")) }
+        s.errors.forEach { print("Error: \($0)") }
 
     case "digest":
         let force = takeFlag(&args, "--force")

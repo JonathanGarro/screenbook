@@ -68,6 +68,7 @@ struct WatchlistApp: App {
                 Button("Export CSV") { model.exportCSV() }
                 Button("Import Reviews from Obsidian...") { model.showingImport = true }
                     .disabled(!model.hasKey)
+                Button("Sync Reviews from Obsidian") { model.syncReviews(force: true) }
                 Button("Fill IMDb and Rotten Tomatoes...") { model.showingFillRatings = true }
                     .disabled(!model.hasKey)
                 Divider()

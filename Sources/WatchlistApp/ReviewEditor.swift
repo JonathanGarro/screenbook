@@ -13,6 +13,8 @@ struct ReviewEditor: View {
     @State private var error: String?
     @State private var confirmDelete = false
     @State private var external: ExternalRatings?
+    @State private var syncState: ReviewSyncState = .inSync
+    @State private var pulledFromNote = false
     @State private var loadedExternal = false
 
     private var finishedBinding: Binding<Date> {
@@ -40,6 +42,8 @@ struct ReviewEditor: View {
                 Spacer()
                 statusBadge
             }
+
+            syncBanner
 
             Form {
                 TextField("Note title", text: $review.noteTitle)
@@ -118,6 +122,15 @@ struct ReviewEditor: View {
         .padding(20)
         .frame(width: 640, height: 720)
         .task {
+            if review.isSent {
+                let before = review
+                let (synced, state) = model.syncOne(review)
+                syncState = state
+                if synced != before {
+                    review = synced
+                    pulledFromNote = state == .inSync
+                }
+            }
             if review.mediaType == .movie && model.hasOMDbKey && !loadedExternal {
                 external = await model.externalRatings(review)
                 loadedExternal = true
@@ -137,6 +150,44 @@ struct ReviewEditor: View {
         } message: {
             Text(review.isSent ? "This removes it from Watchlist only. The note in Obsidian stays." : "The draft will be lost.")
         }
+    }
+
+    @ViewBuilder
+    private var syncBanner: some View {
+        switch syncState {
+        case .conflict:
+            banner("This review was edited in Obsidian, and it also has unsent edits here.", color: .orange) {
+                Button("Use Obsidian Version") {
+                    let (synced, state) = model.syncOne(review, force: true)
+                    review = synced
+                    syncState = state
+                    pulledFromNote = true
+                }
+                Button("Keep Mine") { syncState = .inSync }
+            }
+        case .missing:
+            banner("The note for this review is not in your vault. It may have been deleted.", color: .red) {
+                Button("Locate Note...") { locate() }
+                Button("Remove from Watchlist", role: .destructive) { confirmDelete = true }
+            }
+        case .inSync:
+            if pulledFromNote {
+                banner("Updated from your edits in Obsidian.", color: .green) {
+                    Button("OK") { pulledFromNote = false }
+                }
+            }
+        }
+    }
+
+    private func banner<Buttons: View>(_ text: String, color: Color, @ViewBuilder buttons: () -> Buttons) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: color == .green ? "arrow.down.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(color)
+            Text(text).font(.callout).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            buttons()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.12)))
     }
 
     @ViewBuilder
@@ -202,6 +253,7 @@ struct ReviewEditor: View {
         error = nil
         do {
             review = try model.relinkNote(review, file: url)
+            syncState = .inSync
         } catch {
             self.error = error.localizedDescription
         }
@@ -308,6 +360,7 @@ struct ReviewsList: View {
     var body: some View {
         let drafts = filtered.filter { !$0.isSent }
         let sent = filtered.filter(\.isSent).sorted { ($0.finishedOn ?? "") > ($1.finishedOn ?? "") }
+        let attention = sent.filter { model.reviewStates[$0.id] == .missing || model.reviewStates[$0.id] == .conflict }
         if model.reviews.isEmpty {
             ContentUnavailableView {
                 Label("No Reviews Yet", systemImage: "star.bubble")
@@ -318,6 +371,20 @@ struct ReviewsList: View {
             }
         } else {
             List {
+                Section {
+                    HStack {
+                        Text(syncLabel).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Sync from Obsidian") { model.syncReviews(force: true) }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                    }
+                }
+                if !attention.isEmpty {
+                    Section("Needs Attention") {
+                        ForEach(attention) { r in row(r) }
+                    }
+                }
                 if !drafts.isEmpty {
                     Section("Drafts") {
                         ForEach(drafts) { r in row(r) }
@@ -331,6 +398,11 @@ struct ReviewsList: View {
             }
             .searchable(text: $query, placement: .toolbar, prompt: "Search reviews")
         }
+    }
+
+    private var syncLabel: String {
+        guard let last = model.lastReviewSync else { return "Not synced with Obsidian yet" }
+        return "Synced with Obsidian \(last.formatted(date: .omitted, time: .shortened))"
     }
 
     private func row(_ r: Review) -> some View {
@@ -347,6 +419,14 @@ struct ReviewsList: View {
                     .font(.subheadline)
                 }
                 Spacer()
+                switch model.reviewStates[r.id] {
+                case .missing:
+                    Text("Note missing").font(.caption.bold()).foregroundStyle(.red)
+                case .conflict:
+                    Text("Changed in both").font(.caption.bold()).foregroundStyle(.orange)
+                default:
+                    EmptyView()
+                }
                 Image(systemName: r.mediaType == .movie ? "film" : "tv").foregroundStyle(.secondary)
             }
             .contentShape(Rectangle())
