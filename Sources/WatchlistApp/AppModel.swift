@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, movies, shows, all, stopped, reviews, insights
+    case whatsNew, upcoming, unwatched, movies, shows, watched, all, stopped, reviews, insights
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .unwatched: return "Unwatched"
         case .movies: return "Movies"
         case .shows: return "TV Shows"
+        case .watched: return "Watched"
         case .all: return "Everything"
         case .stopped: return "Stopped"
         case .reviews: return "Reviews"
@@ -32,6 +33,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .unwatched: return "eye.slash"
         case .movies: return "film"
         case .shows: return "tv"
+        case .watched: return "checkmark.circle"
         case .all: return "square.stack"
         case .stopped: return "pause.circle"
         case .reviews: return "star.bubble"
@@ -150,6 +152,7 @@ final class AppModel {
     func items(for item: SidebarItem) -> [Title] {
         let day = today
         let tracked = titles.filter { !$0.isStopped }
+        let active = tracked.filter { !isFinished($0) }
         switch item {
         case .whatsNew, .reviews, .insights:
             return []
@@ -159,14 +162,31 @@ final class AppModel {
         case .unwatched:
             return tracked.filter { (unwatched[$0.id] ?? 0) > 0 }
         case .movies:
-            return tracked.filter { $0.mediaType == .movie }
+            return active.filter { $0.mediaType == .movie }
         case .shows:
-            return tracked.filter { $0.mediaType == .tv }
+            return active.filter { $0.mediaType == .tv }
+        case .watched:
+            return tracked.filter(isFinished).sorted { finishedDate($0) > finishedDate($1) }
         case .all:
             return titles
         case .stopped:
             return titles.filter(\.isStopped).sorted { ($0.stoppedOn ?? "") > ($1.stoppedOn ?? "") }
         }
+    }
+
+    /// watched movies, and shows that have ended with nothing left to watch
+    func isFinished(_ t: Title) -> Bool {
+        switch t.mediaType {
+        case .movie:
+            return t.watchedOn != nil
+        case .tv:
+            let ended = ["Ended", "Canceled", "Cancelled"].contains(t.status ?? "")
+            return ended && (unwatched[t.id] ?? 0) == 0 && !(watchedByTitle[t.id] ?? []).isEmpty
+        }
+    }
+
+    private func finishedDate(_ t: Title) -> String {
+        t.watchedOn ?? t.lastAiredDate ?? ""
     }
 
     func count(for item: SidebarItem) -> Int? {

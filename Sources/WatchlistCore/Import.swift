@@ -251,6 +251,14 @@ extension WatchlistService {
                 continue
             }
             do {
+                // "Show - Season Name", e.g. "True Detective - Night Country", maps to the season tmdb gave that name
+                if c.mediaType == .tv, let named = try await matchNamedSeason(c, client: client) {
+                    c.match = named.match
+                    c.season = named.season
+                    c.status = .ready
+                    result.append(c)
+                    continue
+                }
                 switch c.mediaType {
                 case .movie:
                     (c.match, c.status) = try await matchMovie(c, client: client)
@@ -339,6 +347,25 @@ extension WatchlistService {
             return rivals.isEmpty ? (best, .ready, "title") : (best, .check, "title, \(pool.count) with this name")
         }
         return results.first.map { ($0, .check, "closest title") }
+    }
+
+    /// for a tv note with no season number whose name ends in " - Something", checks whether the show before the
+    /// dash has a season named Something
+    private func matchNamedSeason(_ c: ImportCandidate, client: TMDBClient) async throws -> (match: ImportMatch, season: Int)? {
+        guard NoteImport.splitSeason(c.noteName).show == c.noteName,
+              let dash = c.searchName.range(of: " - ", options: .backwards) else { return nil }
+        let show = String(c.searchName[..<dash.lowerBound])
+        let suffix = NoteImport.normalize(String(c.searchName[dash.upperBound...]))
+        guard !show.isEmpty, !suffix.isEmpty else { return nil }
+        let results = try await client.searchShows(show)
+        let target = NoteImport.normalize(show)
+        for r in results.prefix(3) where [r.name, r.originalName].compactMap({ $0 }).map(NoteImport.normalize).contains(target) {
+            let details = try await client.tv(r.id, ttl: CacheTTL.providers)
+            if let s = details.seasons?.first(where: { $0.seasonNumber > 0 && NoteImport.normalize($0.name ?? "") == suffix }) {
+                return (ImportMatch(tmdbId: r.id, title: r.displayTitle, year: r.year, via: "title and season name"), s.seasonNumber)
+            }
+        }
+        return nil
     }
 
     private func matchMovie(_ c: ImportCandidate, client: TMDBClient) async throws -> (ImportMatch?, ImportStatus) {

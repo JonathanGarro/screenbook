@@ -1137,3 +1137,26 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(watched.nextDate(today: service.today) == nil)
     }
 }
+
+
+// named seasons on import
+
+@Suite struct NamedSeasonTests {
+    @Test func showDashSeasonNameMapsToThatSeason() async throws {
+        let mock = MockTransport()
+        mock.on("search/tv", #"{"page":1,"results":[{"id":46648,"name":"True Detective","first_air_date":"2014-01-12","popularity":40}]}"#)
+        mock.on("tv/46648", """
+        {"id":46648,"name":"True Detective","seasons":[{"season_number":1,"episode_count":8,"name":"Season 1"},{"season_number":4,"episode_count":6,"name":"Night Country"}],"last_episode_to_air":{"season_number":4,"episode_number":6,"air_date":"2024-02-18"}}
+        """)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("named-vault-\(UUID().uuidString)")
+        let u = root.appendingPathComponent("TV/True Detective - Night Country.md")
+        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "---\ntype: Television\nfinished_on: 2024-02-19\n---\n# True Detective - Night Country\n".write(to: u, atomically: true, encoding: .utf8)
+        var c = AppConfig(); c.obsidianTVFolder = "TV"; c.obsidianFilmFolder = "Film"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        let matched = try await service.matchImport(try service.scanVaultForImport(vault: root))
+        #expect(matched[0].status == .ready)
+        #expect(matched[0].season == 4)
+        #expect(matched[0].reviewId == "tv-46648-4")
+    }
+}

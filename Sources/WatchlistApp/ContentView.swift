@@ -145,7 +145,9 @@ struct TitleList: View {
             ContentUnavailableView {
                 Label("Nothing Here", systemImage: "tray")
             } description: {
-                Text(model.titles.isEmpty ? "Add a movie or show to start tracking it." : "No titles match this view.")
+                Text(model.titles.isEmpty ? "Add a movie or show to start tracking it."
+                     : model.selection == .watched ? "Movies you mark watched and shows you finish end up here."
+                     : "No titles match this view.")
             } actions: {
                 if model.titles.isEmpty {
                     Button("Add Title") { model.showingAdd = true }

@@ -43,7 +43,7 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 
 ## Using the app
 
-- **Sidebar**: What's New (results of the last check), Upcoming (anything with a future date), Unwatched (shows with aired episodes you have not marked), Movies, TV Shows, Everything.
+- **Sidebar**: What's New (results of the last check), Upcoming (anything with a future date), Unwatched (shows with aired episodes you have not marked), Movies and TV Shows (still to watch), Watched (movies you watched and shows that ended with nothing left), Everything, Stopped, Reviews, Insights.
 - **Add (Cmd+N)**: search TMDB, pick a result, add it. For shows, tick "I'm caught up" to mark every aired episode watched so only future episodes count as new.
 - **Check on open**: the app runs a check each time it opens (turn off in Settings, Checking). Details are cached for an hour, so reopening often is cheap.
 - **Menu bar count**: a TV icon in the menu bar shows the total number of unwatched aired episodes. Click it for a per-show list (pick one to open it), Check Now, and Open Watchlist. While it is on, closing the window keeps the app running; Cmd+Q quits. Turn it off in Settings, Checking.
