@@ -94,6 +94,7 @@ final class AppModel {
     func open() {
         do {
             let s = try WatchlistService.standard()
+            _ = try? s.markReviewedMoviesWatched()
             service = s
             config = s.config
             hasKey = s.client != nil

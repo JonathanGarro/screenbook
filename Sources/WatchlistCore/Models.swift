@@ -103,6 +103,8 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
     public func nextDate(today: String) -> String? {
         switch mediaType {
         case .movie:
+            // once watched, later dates (like a digital release) are not upcoming for you
+            if watchedOn != nil { return nil }
             if let d = regionReleaseDate, d > today { return d }
             if let d = digitalReleaseDate, d > today { return d }
             return nil

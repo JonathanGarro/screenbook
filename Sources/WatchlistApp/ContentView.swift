@@ -213,9 +213,9 @@ struct TitleRow: View {
         }
         switch title.mediaType {
         case .movie:
+            if let w = title.watchedOn { return "Movie, watched \(DateText.pretty(w))" }
             if let d = title.regionReleaseDate, d > today { return "Movie, releases \(DateText.pretty(d))" }
             if let d = title.digitalReleaseDate, d > today { return "Movie, digital \(DateText.pretty(d))" }
-            if let w = title.watchedOn { return "Movie, watched \(DateText.pretty(w))" }
             if let d = title.regionReleaseDate { return "Movie, released \(DateText.pretty(d))" }
             return "Movie, no date yet"
         case .tv:

@@ -644,6 +644,12 @@ extension WatchlistService {
             }
         }
 
+        // sending a movie review means you watched it
+        if review.mediaType == .movie, var t = try db.title(tmdbId: review.tmdbId, mediaType: .movie), t.watchedOn == nil {
+            t.watchedOn = review.finishedOn ?? today
+            try db.upsertTitle(t)
+        }
+
         var saved = review
         saved.localEdits = false
         saved.exportPath = relative

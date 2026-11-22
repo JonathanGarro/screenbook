@@ -1116,3 +1116,24 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(abs((a.delta(.imdb) ?? 0) - 14) < 0.001)
     }
 }
+
+
+// watched movies are not upcoming
+
+@Suite struct WatchedMovieTests {
+    @Test func watchedMovieDropsOutOfUpcoming() async throws {
+        let mock = MockTransport()
+        mock.on("movie/100", Fixture.movie(release: "2026-10-16", digital: "2026-11-24"))
+        let service = try makeService(mock, Clock("2026-11-20"))
+        let movie = try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        #expect(movie.nextDate(today: service.today) == "2026-11-24")
+
+        // a sent review marks it watched on the review date
+        try service.saveReview(Review(tmdbId: 100, mediaType: .movie, noteTitle: "Test Movie", finishedOn: "2026-10-18",
+                                      exportedAt: "2026-10-18T00:00:00Z", exportPath: "Film/Test Movie.md"))
+        #expect(try service.markReviewedMoviesWatched() == 1)
+        let watched = try service.resolve(100, .movie)
+        #expect(watched.watchedOn == "2026-10-18")
+        #expect(watched.nextDate(today: service.today) == nil)
+    }
+}

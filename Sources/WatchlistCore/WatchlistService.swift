@@ -158,6 +158,19 @@ public final class WatchlistService: @unchecked Sendable {
         return t
     }
 
+    /// movies on the watchlist with a sent review count as watched on the review's finished date
+    @discardableResult
+    public func markReviewedMoviesWatched() throws -> Int {
+        var changed = 0
+        for r in try db.allReviews() where r.mediaType == .movie && r.isSent {
+            guard var t = try db.title(tmdbId: r.tmdbId, mediaType: .movie), t.watchedOn == nil else { continue }
+            t.watchedOn = r.finishedOn ?? today
+            try db.upsertTitle(t)
+            changed += 1
+        }
+        return changed
+    }
+
     /// turns the all-episodes-out override on or off for a show
     public func setAllAvailable(_ t: Title, _ on: Bool) throws {
         guard var current = try db.title(tmdbId: t.tmdbId, mediaType: .tv) else { throw WatchlistError.notTV(t.tmdbId) }
@@ -334,7 +347,7 @@ public final class WatchlistService: @unchecked Sendable {
                     } else if d > day {
                         // a pushed back release gets reported again when it arrives
                         t.releaseFlagged = false
-                        if d <= soon { report.upcomingMovies.append(t) }
+                        if d <= soon && t.watchedOn == nil { report.upcomingMovies.append(t) }
                     }
                 }
             case .tv:
