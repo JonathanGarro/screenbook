@@ -47,6 +47,7 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 - **Check on open**: the app runs a check each time it opens (turn off in Settings, Checking). Details are cached for an hour, so reopening often is cheap.
 - **Menu bar count**: a TV icon in the menu bar shows the total number of unwatched aired episodes. Click it for a per-show list (pick one to open it), Check Now, and Open Watchlist. While it is on, closing the window keeps the app running; Cmd+Q quits. Turn it off in Settings, Checking.
 - **Notifications**: when a check finds newly aired episodes or a saved movie whose release date has arrived, macOS shows a notification per title (or one summary if there are more than four). Each episode and release is announced once. Clicking it opens the title. While the app is running it also checks every 6 hours, so notifications arrive without opening the window. These are in Settings, Notifications, with a Send Test button. Checks run by the CLI (cron or launchd) do not notify, and they mark episodes and releases as already reported, so pick one: the app's 6 hour check or a scheduled CLI job.
+- **Stop Watching**: in a title's toolbar or right-click menu. The title keeps its watched episodes and reviews but leaves Unwatched, Upcoming, What's New, the menu bar count, notifications, and checks, and moves to **Stopped** in the sidebar. **Resume** brings it back; anything that aired meanwhile shows as unwatched without a burst of new-episode alerts. Movies get **Stop Tracking**. **Remove** is still the permanent delete.
 - **Check Now (Cmd+R)**: refreshes every title. Shift+Cmd+R bypasses the one hour cache.
 - **Detail pane**: dates, status, overview, and for shows an episode list per season. Click the circle to toggle watched. Right click an episode for "Mark Watched Up to Here". The checkmark menu marks a whole season or everything aired.
 - **Watchlist menu**: Write Digest (Cmd+D) writes `outputs/digest.md` and reveals it in Finder. Export CSV writes `outputs/watchlist.csv`. Show Data Folder opens the folder.
@@ -139,6 +140,8 @@ The CLI shares the same database and settings as the app.
 ```
 watchlist add <search term> [--caught-up] [--pick N]
 watchlist remove <tmdb_id> [--movie | --tv]
+watchlist stop <tmdb_id> [--movie | --tv]
+watchlist resume <tmdb_id> [--movie | --tv]
 watchlist list
 watchlist check [--force]
 watchlist watch <tmdb_id> <season> <episode> [--unwatch]
@@ -179,7 +182,7 @@ A GUI app has no meaningful working directory, so the relative paths from the or
 
 Open `watchlist.db` in any SQLite client.
 
-- `titles`: `tmdb_id`, `media_type` ('movie' or 'tv'), `title`, `year`, `region_release_date`, `added_on`, plus `digital_release_date`, `status`, `overview`, `poster_path`, `last_aired_season/episode/date`, `next_air_season/episode/date`, `seen_season/episode` (the latest aired episode at the previous check), `release_flagged` (movie release already reported), `last_refreshed`, `watched_on` (movies), `all_available` (tv streaming drop override). Primary key is (`tmdb_id`, `media_type`).
+- `titles`: `tmdb_id`, `media_type` ('movie' or 'tv'), `title`, `year`, `region_release_date`, `added_on`, plus `digital_release_date`, `status`, `overview`, `poster_path`, `last_aired_season/episode/date`, `next_air_season/episode/date`, `seen_season/episode` (the latest aired episode at the previous check), `release_flagged` (movie release already reported), `last_refreshed`, `watched_on` (movies), `all_available` (tv streaming drop override), `stopped_on` (stopped watching; progress kept). Primary key is (`tmdb_id`, `media_type`).
 - `watched_episodes`: `tmdb_id`, `season`, `episode`, `watched_on`.
 - `seasons`: `tmdb_id`, `season_number`, `episode_count`, `air_date`, `name`. Copied from the series details call; used to work out which episodes have aired.
 - `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`, `local_edits` (saved in Watchlist since the last send).

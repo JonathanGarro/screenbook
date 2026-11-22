@@ -12,6 +12,18 @@ struct TitleDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let stopped = title.stoppedOn {
+                    HStack(spacing: 10) {
+                        Image(systemName: "pause.circle.fill").foregroundStyle(.orange)
+                        Text("You stopped \(title.mediaType == .tv ? "watching" : "tracking") this on \(DateText.pretty(stopped)). Your progress is kept, and it is left out of Unwatched, Upcoming, notifications, and checks.")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Resume") { Task { await model.setStopped(title, false) } }
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                }
                 header
                 if let overview = title.overview, !overview.isEmpty {
                     Text(overview)
@@ -39,6 +51,12 @@ struct TitleDetailView: View {
                     Label("Refresh", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .help("Refresh this title from TMDB")
+                Button {
+                    Task { await model.setStopped(title, !title.isStopped) }
+                } label: {
+                    Label(title.isStopped ? "Resume" : "Stop", systemImage: title.isStopped ? "play.circle" : "pause.circle")
+                }
+                .help(title.isStopped ? "Resume tracking" : (title.mediaType == .tv ? "Stop watching, keeping your progress" : "Stop tracking, keeping it saved"))
                 Button(role: .destructive) {
                     model.remove(title)
                 } label: {

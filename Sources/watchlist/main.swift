@@ -13,6 +13,8 @@ commands:
   check [--force]                              refresh all titles and print what is new
   watch <tmdb_id> <season> <episode> [--unwatch]
   watch <tmdb_id> --all-up-to <season> <episode>
+  stop <tmdb_id> [--movie | --tv]              stop watching or tracking, keeping progress
+  resume <tmdb_id> [--movie | --tv]            resume a stopped title
   available <tmdb_id> on|off                   treat every listed episode as released (streaming drops)
   import-reviews [--apply] [--include-check] [--add-shows on|off]
                                                link existing obsidian review notes (dry run unless --apply)
@@ -79,6 +81,9 @@ func listTable(_ service: WatchlistService) throws -> String {
     let rows = try service.titles().map { t -> [String] in
         var next = ""
         var note = ""
+        if let stopped = t.stoppedOn {
+            return [String(t.tmdbId), t.mediaType.label, t.title, t.year.map(String.init) ?? "", "", "stopped \(stopped)"]
+        }
         switch t.mediaType {
         case .movie:
             if let d = t.regionReleaseDate, d > today {
@@ -195,6 +200,12 @@ do {
             let t = try service.resolve(id, .tv)
             print("\(unwatch ? "Unmarked" : "Marked") \(t.title) \(ref.code) \(unwatch ? "as unwatched" : "watched").")
         }
+
+    case "stop", "resume":
+        let type = mediaFilter(&args)
+        guard let first = args.first else { fail("usage: watchlist \(command) <tmdb_id>") }
+        let t = try await service.setStopped(int(first, "tmdb_id"), type, stopped: command == "stop")
+        print(command == "stop" ? "Stopped \(t.title). Progress is kept; resume any time." : "Resumed \(t.title).")
 
     case "available":
         guard args.count == 2 else { fail("usage: watchlist available <tmdb_id> on|off") }

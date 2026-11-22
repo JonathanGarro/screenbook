@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, movies, shows, all, reviews
+    case whatsNew, upcoming, unwatched, movies, shows, all, stopped, reviews
 
     var id: String { rawValue }
 
@@ -19,6 +19,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .movies: return "Movies"
         case .shows: return "TV Shows"
         case .all: return "Everything"
+        case .stopped: return "Stopped"
         case .reviews: return "Reviews"
         }
     }
@@ -31,6 +32,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .movies: return "film"
         case .shows: return "tv"
         case .all: return "square.stack"
+        case .stopped: return "pause.circle"
         case .reviews: return "star.bubble"
         }
     }
@@ -99,7 +101,8 @@ final class AppModel {
             var watchedMap: [String: Set<EpisodeRef>] = [:]
             var seasonMap: [String: [SeasonSummary]] = [:]
             for t in titles where t.mediaType == .tv {
-                counts[t.id] = try service.unwatchedAired(t).count
+                // stopped shows keep their progress but do not count as unwatched
+                counts[t.id] = t.isStopped ? 0 : try service.unwatchedAired(t).count
                 watchedMap[t.id] = try service.db.watched(tmdbId: t.tmdbId)
                 seasonMap[t.id] = try service.db.seasons(tmdbId: t.tmdbId)
             }
@@ -134,20 +137,23 @@ final class AppModel {
 
     func items(for item: SidebarItem) -> [Title] {
         let day = today
+        let tracked = titles.filter { !$0.isStopped }
         switch item {
         case .whatsNew, .reviews:
             return []
         case .upcoming:
-            return titles.filter { $0.nextDate(today: day) != nil }
+            return tracked.filter { $0.nextDate(today: day) != nil }
                 .sorted { ($0.nextDate(today: day) ?? "") < ($1.nextDate(today: day) ?? "") }
         case .unwatched:
-            return titles.filter { (unwatched[$0.id] ?? 0) > 0 }
+            return tracked.filter { (unwatched[$0.id] ?? 0) > 0 }
         case .movies:
-            return titles.filter { $0.mediaType == .movie }
+            return tracked.filter { $0.mediaType == .movie }
         case .shows:
-            return titles.filter { $0.mediaType == .tv }
+            return tracked.filter { $0.mediaType == .tv }
         case .all:
             return titles
+        case .stopped:
+            return titles.filter(\.isStopped).sorted { ($0.stoppedOn ?? "") > ($1.stoppedOn ?? "") }
         }
     }
 
@@ -268,6 +274,16 @@ final class AppModel {
         do {
             try service.remove(t.tmdbId, t.mediaType)
             if selectedTitleID == t.id { selectedTitleID = nil }
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setStopped(_ t: Title, _ stopped: Bool) async {
+        guard let service else { return }
+        do {
+            try await service.setStopped(t.tmdbId, t.mediaType, stopped: stopped)
             reload()
         } catch {
             errorMessage = error.localizedDescription

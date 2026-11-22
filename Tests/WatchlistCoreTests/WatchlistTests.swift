@@ -1046,3 +1046,38 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(try await service.seriesPosition(tmdbId: 5) == nil)
     }
 }
+
+
+// stop watching
+
+@Suite struct StopWatchingTests {
+    @Test func stoppedShowsKeepProgressAndSkipChecks() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-02-01")
+        mock.on("tv/200", Fixture.tv(last: (2, 2, "2026-01-25"), next: (2, 3, "2026-02-08"), seasons: [(1, 3), (2, 8)]))
+        let service = try makeService(mock, clock)
+        let show = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        try await service.markAllUpTo(200, season: 1, episode: 3)
+
+        let stopped = try await service.setStopped(200, .tv, stopped: true)
+        #expect(stopped.stoppedOn == "2026-02-01")
+        #expect(try service.db.watched(tmdbId: 200).count == 3)
+
+        // new episodes air while stopped: no report, and the show is not refreshed
+        clock.set("2026-02-20")
+        mock.routes["/3/tv/200"] = [(200, Fixture.tv(last: (2, 5, "2026-02-15"), next: nil, seasons: [(1, 3), (2, 8)]))]
+        let calls = mock.count("tv/200")
+        let report = try await service.check(force: true)
+        #expect(report.showsWithUnwatched.isEmpty && report.upcomingEpisodes.isEmpty)
+        #expect(mock.count("tv/200") == calls)
+
+        // resuming refreshes, keeps progress, and shows the backlog without counting it as new
+        let resumed = try await service.setStopped(200, .tv, stopped: false)
+        #expect(resumed.stoppedOn == nil)
+        #expect(try service.unwatchedAired(resumed).count == 5)
+        let after = try await service.check(force: true)
+        #expect(after.showsWithUnwatched.first?.unwatchedCount == 5)
+        #expect(after.newEpisodeShows.isEmpty)
+        _ = show
+    }
+}

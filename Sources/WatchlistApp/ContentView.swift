@@ -153,6 +153,11 @@ struct TitleList: View {
                     .tag(t.id)
                     .contextMenu {
                         Button("Refresh") { Task { await model.refresh(t) } }
+                        if t.isStopped {
+                            Button("Resume Watching") { Task { await model.setStopped(t, false) } }
+                        } else {
+                            Button(t.mediaType == .tv ? "Stop Watching" : "Stop Tracking") { Task { await model.setStopped(t, true) } }
+                        }
                         if let url = t.tmdbURL {
                             Link("Open on TMDB", destination: url)
                         }
@@ -199,6 +204,9 @@ struct TitleRow: View {
 
     private var subtitle: String {
         let today = model.today
+        if let stopped = title.stoppedOn {
+            return "\(title.mediaType.label), stopped \(DateText.pretty(stopped))"
+        }
         switch title.mediaType {
         case .movie:
             if let d = title.regionReleaseDate, d > today { return "Movie, releases \(DateText.pretty(d))" }

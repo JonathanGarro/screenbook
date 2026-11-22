@@ -134,6 +134,30 @@ public final class WatchlistService: @unchecked Sendable {
         return EpisodeMath.aired(seasons: try db.seasons(tmdbId: t.tmdbId), lastAired: try effectiveLastAired(t))
     }
 
+    /// stops or resumes tracking. progress is kept either way. resuming refreshes the title and marks what
+    /// aired in the meantime as already seen, so it shows as backlog without new-episode alerts.
+    @discardableResult
+    public func setStopped(_ tmdbId: Int, _ type: MediaType?, stopped: Bool) async throws -> Title {
+        var t = try resolve(tmdbId, type)
+        if stopped {
+            t.stoppedOn = today
+            try db.upsertTitle(t)
+            return t
+        }
+        t.stoppedOn = nil
+        try db.upsertTitle(t)
+        if client != nil, let fresh = try? await refresh(t, ttl: 0) { t = fresh }
+        if t.mediaType == .tv, let end = try effectiveLastAired(t) {
+            t.seenSeason = end.season
+            t.seenEpisode = end.episode
+        }
+        if t.mediaType == .movie, let d = t.regionReleaseDate, d <= today {
+            t.releaseFlagged = true
+        }
+        try db.upsertTitle(t)
+        return t
+    }
+
     /// turns the all-episodes-out override on or off for a show
     public func setAllAvailable(_ t: Title, _ on: Bool) throws {
         guard var current = try db.title(tmdbId: t.tmdbId, mediaType: .tv) else { throw WatchlistError.notTV(t.tmdbId) }
@@ -290,8 +314,9 @@ public final class WatchlistService: @unchecked Sendable {
         let soon = DateText.addDays(day, 30)
         let all = try titles()
 
-        for (i, old) in all.enumerated() {
-            progress?(i + 1, all.count, old.title)
+        let tracked = all.filter { !$0.isStopped }
+        for (i, old) in tracked.enumerated() {
+            progress?(i + 1, tracked.count, old.title)
             var t: Title
             do {
                 t = try await fetchTitle(id: old.tmdbId, type: old.mediaType, existing: old, ttl: ttl)

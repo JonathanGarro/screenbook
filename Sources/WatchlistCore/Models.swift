@@ -43,6 +43,10 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
     public var allAvailable: Bool
     /// tv: tmdb's series type, e.g. "Miniseries"
     public var seriesType: String?
+    /// day the user stopped watching; stopped titles keep their progress but are left out of tracking
+    public var stoppedOn: String?
+
+    public var isStopped: Bool { stoppedOn != nil }
 
     public var id: String { "\(mediaType.rawValue)-\(tmdbId)" }
 
@@ -53,7 +57,7 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
                 lastAiredDate: String? = nil, nextAirSeason: Int? = nil, nextAirEpisode: Int? = nil,
                 nextAirDate: String? = nil, seenSeason: Int? = nil, seenEpisode: Int? = nil,
                 releaseFlagged: Bool = false, lastRefreshed: String? = nil, watchedOn: String? = nil,
-                allAvailable: Bool = false, seriesType: String? = nil) {
+                allAvailable: Bool = false, seriesType: String? = nil, stoppedOn: String? = nil) {
         self.tmdbId = tmdbId
         self.mediaType = mediaType
         self.title = title
@@ -77,6 +81,7 @@ public struct Title: Identifiable, Hashable, Codable, Sendable {
         self.watchedOn = watchedOn
         self.allAvailable = allAvailable
         self.seriesType = seriesType
+        self.stoppedOn = stoppedOn
     }
 
     public var lastAired: EpisodeRef? {
