@@ -39,6 +39,12 @@ struct TitleDetailView: View {
                 if title.mediaType == .tv {
                     EpisodesSection(title: title)
                 }
+                let myReviews = model.reviews.filter { $0.tmdbId == title.tmdbId && $0.mediaType == title.mediaType }
+                    .sorted { ($0.season, $0.finishedOn ?? "") < ($1.season, $1.finishedOn ?? "") }
+                if !myReviews.isEmpty {
+                    Text(myReviews.count == 1 ? "Your Review" : "Your Reviews").font(.headline)
+                    ForEach(myReviews) { r in ReviewCard(review: r) }
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)

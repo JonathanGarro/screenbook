@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, movies, shows, watched, all, stopped, reviews, insights
+    case whatsNew, upcoming, unwatched, library, reviews, insights
 
     var id: String { rawValue }
 
@@ -16,11 +16,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .whatsNew: return "What's New"
         case .upcoming: return "Upcoming"
         case .unwatched: return "Unwatched"
-        case .movies: return "Movies"
-        case .shows: return "TV Shows"
-        case .watched: return "Watched"
-        case .all: return "Everything"
-        case .stopped: return "Stopped"
+        case .library: return "Library"
         case .reviews: return "Reviews"
         case .insights: return "Insights"
         }
@@ -31,15 +27,40 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .whatsNew: return "sparkles"
         case .upcoming: return "calendar"
         case .unwatched: return "eye.slash"
-        case .movies: return "film"
-        case .shows: return "tv"
-        case .watched: return "checkmark.circle"
-        case .all: return "square.stack"
-        case .stopped: return "pause.circle"
+        case .library: return "books.vertical"
         case .reviews: return "star.bubble"
         case .insights: return "chart.dots.scatter"
         }
     }
+}
+
+// library
+
+enum LibraryType: String, CaseIterable, Identifiable {
+    case all = "All", movies = "Movies", tv = "TV"
+    var id: String { rawValue }
+}
+
+enum LibraryStatus: String, CaseIterable, Identifiable {
+    case toWatch = "To Watch", watched = "Watched", stopped = "Stopped", all = "All"
+    var id: String { rawValue }
+}
+
+/// one row in the library: a watchlist title, or a title known only from your reviews
+struct LibraryEntry: Identifiable, Hashable {
+    var id: String
+    var tmdbId: Int
+    var mediaType: MediaType
+    var name: String
+    var status: LibraryStatus
+    /// on the watchlist, so it has a full detail view
+    var onWatchlist: Bool
+    var finishedOn: String?
+    var stoppedOn: String?
+    var reviews: [Review]
+
+    /// the latest rating, for the row
+    var rating: Double? { reviews.max { ($0.finishedOn ?? "") < ($1.finishedOn ?? "") }?.rating }
 }
 
 // model
@@ -70,6 +91,12 @@ final class AppModel {
     private var activeObserver: NSObjectProtocol?
     var report: CheckReport?
     var selection: SidebarItem? = .whatsNew
+    var libraryType: LibraryType = .all
+    var libraryStatus: LibraryStatus = .toWatch
+    var librarySearch = ""
+    /// posters and details for history titles, filled lazily as rows appear
+    var summaries: [String: TitleSummary] = [:]
+    private var summaryRequests = Set<String>()
     var selectedTitleID: String?
     var isChecking = false
     var progressText = ""
@@ -124,6 +151,7 @@ final class AppModel {
             watchedByTitle = watchedMap
             seasonsByTitle = seasonMap
             reviews = try service.reviews()
+            libraryEntries = buildLibrary()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -152,25 +180,83 @@ final class AppModel {
     func items(for item: SidebarItem) -> [Title] {
         let day = today
         let tracked = titles.filter { !$0.isStopped }
-        let active = tracked.filter { !isFinished($0) }
         switch item {
-        case .whatsNew, .reviews, .insights:
+        case .whatsNew, .reviews, .insights, .library:
             return []
         case .upcoming:
             return tracked.filter { $0.nextDate(today: day) != nil }
                 .sorted { ($0.nextDate(today: day) ?? "") < ($1.nextDate(today: day) ?? "") }
         case .unwatched:
             return tracked.filter { (unwatched[$0.id] ?? 0) > 0 }
-        case .movies:
-            return active.filter { $0.mediaType == .movie }
-        case .shows:
-            return active.filter { $0.mediaType == .tv }
+        }
+    }
+
+    /// watchlist titles plus everything you have reviewed, rebuilt when the data changes
+    private(set) var libraryEntries: [LibraryEntry] = []
+
+    private func buildLibrary() -> [LibraryEntry] {
+        var byId: [String: LibraryEntry] = [:]
+        var reviewsById: [String: [Review]] = [:]
+        for r in reviews where r.isSent || r.localEdits {
+            reviewsById["\(r.mediaType.rawValue)-\(r.tmdbId)", default: []].append(r)
+        }
+        for t in titles {
+            let status: LibraryStatus = t.isStopped ? .stopped : (isFinished(t) ? .watched : .toWatch)
+            byId[t.id] = LibraryEntry(id: t.id, tmdbId: t.tmdbId, mediaType: t.mediaType, name: t.title, status: status,
+                                      onWatchlist: true, finishedOn: isFinished(t) ? finishedDate(t) : nil,
+                                      stoppedOn: t.stoppedOn, reviews: reviewsById[t.id] ?? [])
+        }
+        for (id, rs) in reviewsById where byId[id] == nil {
+            let first = rs.min { $0.season < $1.season }!
+            let name = first.mediaType == .tv ? NoteImport.splitSeason(first.noteTitle).show : first.noteTitle
+            byId[id] = LibraryEntry(id: id, tmdbId: first.tmdbId, mediaType: first.mediaType, name: name, status: .watched,
+                                    onWatchlist: false, finishedOn: rs.compactMap(\.finishedOn).max(), stoppedOn: nil, reviews: rs)
+        }
+        return Array(byId.values)
+    }
+
+    /// library entries after the type, status, and search filters, in a sensible order for the status
+    func filteredLibrary(type: LibraryType? = nil, status: LibraryStatus? = nil, search: String? = nil) -> [LibraryEntry] {
+        let type = type ?? libraryType
+        let status = status ?? libraryStatus
+        let q = (search ?? librarySearch).trimmingCharacters(in: .whitespaces)
+        let entries = libraryEntries.filter { e in
+            (type == .all || (type == .movies) == (e.mediaType == .movie))
+                && (status == .all || e.status == status)
+                && (q.isEmpty || e.name.localizedCaseInsensitiveContains(q))
+        }
+        switch status {
         case .watched:
-            return tracked.filter(isFinished).sorted { finishedDate($0) > finishedDate($1) }
-        case .all:
-            return titles
+            return entries.sorted { ($0.finishedOn ?? "", $1.name) > ($1.finishedOn ?? "", $0.name) }
         case .stopped:
-            return titles.filter(\.isStopped).sorted { ($0.stoppedOn ?? "") > ($1.stoppedOn ?? "") }
+            return entries.sorted { ($0.stoppedOn ?? "") > ($1.stoppedOn ?? "") }
+        default:
+            return entries.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
+    }
+
+    func libraryEntry(_ id: String?) -> LibraryEntry? {
+        guard let id else { return nil }
+        return libraryEntries.first { $0.id == id }
+    }
+
+    /// fetches a history title's poster and details once
+    func loadSummary(_ e: LibraryEntry) {
+        guard summaries[e.id] == nil, !summaryRequests.contains(e.id), let service else { return }
+        summaryRequests.insert(e.id)
+        Task {
+            if let s = try? await service.summary(e.mediaType, e.tmdbId) { summaries[e.id] = s }
+        }
+    }
+
+    func addFromHistory(_ e: LibraryEntry) async {
+        guard let service else { return }
+        do {
+            try await service.addFromHistory(e.mediaType, e.tmdbId)
+            reload()
+            selectedTitleID = e.id
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 
@@ -245,7 +331,8 @@ final class AppModel {
     /// brings the main window forward on a title, used by notification clicks and the menu bar
     func openTitle(_ id: String?) {
         if let id, title(id) != nil {
-            selection = .all
+            selection = .library
+            libraryStatus = .all
             selectedTitleID = id
         } else {
             selection = .whatsNew

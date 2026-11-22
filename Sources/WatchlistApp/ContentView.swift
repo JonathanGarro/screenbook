@@ -23,12 +23,14 @@ struct ContentView: View {
                     NoKeyView()
                 } else if model.selection == .whatsNew {
                     WhatsNewList()
+                } else if model.selection == .library {
+                    LibraryList()
                 } else if model.selection == .reviews {
                     ReviewsList()
                 } else if model.selection == .insights {
                     InsightsTable()
                 } else {
-                    TitleList(items: model.items(for: model.selection ?? .all))
+                    TitleList(items: model.items(for: model.selection ?? .upcoming))
                 }
             }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360)
@@ -38,6 +40,9 @@ struct ContentView: View {
             } else if let t = model.title(model.selectedTitleID) {
                 TitleDetailView(title: t)
                     .id(t.id)
+            } else if model.selection == .library, let e = model.libraryEntry(model.selectedTitleID) {
+                HistoryDetailView(entry: e)
+                    .id(e.id)
             } else {
                 ContentUnavailableView("Nothing Selected", systemImage: "film.stack",
                                        description: Text("Pick a title to see dates, episodes, and where to watch."))
@@ -145,9 +150,7 @@ struct TitleList: View {
             ContentUnavailableView {
                 Label("Nothing Here", systemImage: "tray")
             } description: {
-                Text(model.titles.isEmpty ? "Add a movie or show to start tracking it."
-                     : model.selection == .watched ? "Movies you mark watched and shows you finish end up here."
-                     : "No titles match this view.")
+                Text(model.titles.isEmpty ? "Add a movie or show to start tracking it." : "No titles match this view.")
             } actions: {
                 if model.titles.isEmpty {
                     Button("Add Title") { model.showingAdd = true }
@@ -179,6 +182,8 @@ struct TitleRow: View {
     @Environment(AppModel.self) private var model
     let title: Title
     var detail: String? = nil
+    /// your latest rating, shown at the trailing edge when present
+    var rating: Double? = nil
 
     var body: some View {
         HStack(spacing: 10) {
@@ -196,6 +201,9 @@ struct TitleRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            if let rating {
+                Text(myLabel(rating)).font(.caption).foregroundStyle(.yellow)
+            }
             if let n = model.unwatched[title.id], n > 0 {
                 Text("\(n)")
                     .font(.caption.bold())

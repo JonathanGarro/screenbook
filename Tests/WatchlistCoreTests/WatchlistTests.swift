@@ -1160,3 +1160,25 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(matched[0].reviewId == "tv-46648-4")
     }
 }
+
+
+// library history
+
+@Suite struct LibraryTests {
+    @Test func addingAReviewedShowKeepsReviewedSeasonsWatched() async throws {
+        let mock = MockTransport()
+        mock.on("tv/200", Fixture.tv(last: (3, 8, "2026-01-25"), next: nil, seasons: [(1, 8), (2, 8), (3, 8)]))
+        let service = try makeService(mock, Clock("2026-02-01"))
+        try service.saveReview(Review(tmdbId: 200, mediaType: .tv, season: 2, noteTitle: "Test Show - Season 2",
+                                      finishedOn: "2025-06-01", exportedAt: "2025-06-01T00:00:00Z", exportPath: "TV/Test Show - Season 2.md"))
+        let show = try await service.addFromHistory(.tv, 200)
+        #expect(try service.unwatchedAired(show).count == 8)
+        #expect(try service.db.lastWatchedDay(tmdbId: 200, season: 2) == "2025-06-01")
+
+        mock.on("movie/100", Fixture.movie(release: "2025-01-01"))
+        try service.saveReview(Review(tmdbId: 100, mediaType: .movie, noteTitle: "Test Movie", finishedOn: "2025-03-01",
+                                      exportedAt: "2025-03-01T00:00:00Z", exportPath: "Film/Test Movie.md"))
+        let movie = try await service.addFromHistory(.movie, 100)
+        #expect(movie.watchedOn == "2025-03-01")
+    }
+}
