@@ -63,6 +63,8 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
     public let overview: String?
     public let posterPath: String?
     public let popularity: Double?
+    public let originalTitle: String?
+    public let originalName: String?
 
     public var kind: MediaType? { mediaType.flatMap(MediaType.init(rawValue:)) }
     public var displayTitle: String { title ?? name ?? "Untitled" }
@@ -71,7 +73,8 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
     public var posterURL: URL? { posterPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w92\($0)") } }
 
     public init(id: Int, mediaType: String?, title: String? = nil, name: String? = nil, releaseDate: String? = nil,
-                firstAirDate: String? = nil, overview: String? = nil, posterPath: String? = nil, popularity: Double? = nil) {
+                firstAirDate: String? = nil, overview: String? = nil, posterPath: String? = nil, popularity: Double? = nil,
+                originalTitle: String? = nil, originalName: String? = nil) {
         self.id = id
         self.mediaType = mediaType
         self.title = title
@@ -81,7 +84,21 @@ public struct SearchResult: Decodable, Identifiable, Hashable, Sendable {
         self.overview = overview
         self.posterPath = posterPath
         self.popularity = popularity
+        self.originalTitle = originalTitle
+        self.originalName = originalName
     }
+
+    /// copy with the media type filled in, for endpoints that omit media_type
+    public func withKind(_ kind: MediaType) -> SearchResult {
+        SearchResult(id: id, mediaType: kind.rawValue, title: title, name: name, releaseDate: releaseDate,
+                     firstAirDate: firstAirDate, overview: overview, posterPath: posterPath, popularity: popularity,
+                     originalTitle: originalTitle, originalName: originalName)
+    }
+}
+
+struct FindResponse: Decodable {
+    let movieResults: [SearchResult]?
+    let tvResults: [SearchResult]?
 }
 
 struct SearchPage: Decodable {
@@ -296,6 +313,27 @@ public actor TMDBClient {
         let data = try await get("search/multi", query: ["query": text, "include_adult": "false", "language": "en-US", "page": "1"],
                                  ttl: CacheTTL.search)
         return try decode(SearchPage.self, data).results.filter { $0.kind != nil }
+    }
+
+    public func searchMovies(_ text: String, year: Int? = nil) async throws -> [SearchResult] {
+        var q = ["query": text, "include_adult": "false", "language": "en-US", "page": "1"]
+        if let year { q["year"] = String(year) }
+        let data = try await get("search/movie", query: q, ttl: CacheTTL.search)
+        return try decode(SearchPage.self, data).results.map { $0.withKind(.movie) }
+    }
+
+    public func searchShows(_ text: String, year: Int? = nil) async throws -> [SearchResult] {
+        var q = ["query": text, "include_adult": "false", "language": "en-US", "page": "1"]
+        if let year { q["first_air_date_year"] = String(year) }
+        let data = try await get("search/tv", query: q, ttl: CacheTTL.search)
+        return try decode(SearchPage.self, data).results.map { $0.withKind(.tv) }
+    }
+
+    /// looks up a title by imdb id via /find
+    public func find(imdbId: String) async throws -> (movies: [SearchResult], shows: [SearchResult]) {
+        let data = try await get("find/\(imdbId)", query: ["external_source": "imdb_id", "language": "en-US"], ttl: CacheTTL.providers)
+        let r = try decode(FindResponse.self, data)
+        return ((r.movieResults ?? []).map { $0.withKind(.movie) }, (r.tvResults ?? []).map { $0.withKind(.tv) })
     }
 
     /// movie details with release_dates appended in the same call

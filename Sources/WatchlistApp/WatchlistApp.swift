@@ -66,6 +66,10 @@ struct WatchlistApp: App {
                     .keyboardShortcut("d")
                     .disabled(!model.hasKey)
                 Button("Export CSV") { model.exportCSV() }
+                Button("Import Reviews from Obsidian...") { model.showingImport = true }
+                    .disabled(!model.hasKey)
+                Button("Fill IMDb and Rotten Tomatoes...") { model.showingFillRatings = true }
+                    .disabled(!model.hasKey)
                 Divider()
                 Button("Show Data Folder") { model.revealDataFolder() }
             }

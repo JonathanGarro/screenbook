@@ -71,6 +71,12 @@ struct ContentView: View {
         .sheet(item: $model.editingReview) { r in
             ReviewEditor(review: r)
         }
+        .sheet(isPresented: $model.showingImport) {
+            ImportSheet()
+        }
+        .sheet(isPresented: $model.showingFillRatings) {
+            FillRatingsSheet()
+        }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

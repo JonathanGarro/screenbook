@@ -97,6 +97,25 @@ Setup is in Settings, Obsidian Reviews:
 - **Show index folder**: if set, a minimal index note (`type: Television`, `# Show`) is created there when a season links to a show that has none.
 - **OMDb key** (optional, free at omdbapi.com): fills `imdb_rating`, `imdb_votes`, `metascore`, `rotten_tomatoes`, and `my_rating_delta` (rating x 20 minus the Rotten Tomatoes percentage). Without it those fields are left blank. `imdb_id` and `imdb_link` come from TMDB either way. The key is stored as `OMDB_API_KEY` in the same `.env` file.
 
+### Importing existing reviews
+
+Already have review notes in Obsidian? **Watchlist > Import Reviews from Obsidian...** (or `watchlist import-reviews`) links them:
+
+1. Watchlist reads every note in the movie and TV folders and matches each one to TMDB. Movies with an `imdb_id` match exactly; the rest match by title. TV notes named `Show - Season N` map to that season; a note named just for the show counts as season 1. A year in the name, like `A Christmas Carol (2019)`, is used as a hint.
+2. You review the matches before anything is written. **Matched** notes are included. **Check** means a best guess (several titles share the name, the closest match has a different title, no release date, or the show does not have that season); tick it if it is right, or click **Fix** to search for the right title. **No match** notes are skipped.
+   **Fix** can also rename the note: tick **Rename the note in Obsidian** and edit the suggested name (TMDB's title). On import the file is renamed, its `# heading` follows, and every `[[Old Name]]` link in the vault is updated, keeping folder prefixes, `#headings`, and `|aliases`, like a rename inside Obsidian. If another note shares the old name, links are left alone because they are ambiguous, and Watchlist will not rename onto a name that already exists. Notes whose links change are included in the backup.
+3. On import, a zip backup of both folders goes to `outputs/`, each included note gets a `watchlist_id` property (nothing else changes), and each becomes a sent review in Watchlist with its rating, date, and text. Shows that are still running can be added to the watchlist, marked watched through the last season you reviewed. Movies are not added.
+
+The CLI version is a dry run unless you pass `--apply` (`--include-check` also imports the best guesses).
+
+When you later update an imported review from Watchlist, properties Watchlist would leave blank (such as `imdb_rating` without an OMDb key) and properties it does not manage keep their existing values.
+
+### IMDb, Metascore, and Rotten Tomatoes
+
+With an OMDb key, movie notes get `imdb_id`, `imdb_link`, `imdb_rating`, `imdb_votes`, `metascore`, `rotten_tomatoes`, and `my_rating_delta`, in the same format as a typical OMDb-to-frontmatter script. Films are looked up by IMDb id (from TMDB), not by title, so similarly named films do not get mixed up. The review editor shows the scores next to your stars, with the delta updating as you change the rating.
+
+**Watchlist > Fill IMDb and Rotten Tomatoes...** (or `watchlist fill-ratings`, a dry run unless `--apply`) fills those properties in every linked movie note where they are blank or missing, without touching anything else. Tick "refresh" (or `--refresh`) to also update scores that are already filled. TV notes are left alone. OMDb results are cached for 30 days.
+
 The first send may trigger a macOS prompt to let Watchlist access the folder your vault is in.
 
 ## CLI commands
@@ -111,6 +130,8 @@ watchlist check [--force]
 watchlist watch <tmdb_id> <season> <episode> [--unwatch]
 watchlist watch <tmdb_id> --all-up-to <season> <episode>
 watchlist available <tmdb_id> on|off
+watchlist import-reviews [--apply] [--include-check] [--add-shows on|off]
+watchlist fill-ratings [--apply] [--refresh]
 watchlist digest [--force]
 watchlist export
 watchlist config [--region XX] [--streaming on|off] [--rent-buy on|off] [--check-on-open on|off] [--menu-bar on|off] [--notify on|off] [--notify-movies on|off] [--periodic on|off] [--api-key KEY]
@@ -287,6 +308,7 @@ Sources/WatchlistCore/        shared logic
   WatchlistService.swift      add, remove, check, watch, release date and episode logic
   Digest.swift                markdown digest, text tables, csv, attribution
   Reviews.swift               review drafts, obsidian note format and export, omdb
+  Import.swift                importing existing obsidian review notes
 Sources/WatchlistApp/         swiftui app
 Sources/watchlist/main.swift  cli
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)

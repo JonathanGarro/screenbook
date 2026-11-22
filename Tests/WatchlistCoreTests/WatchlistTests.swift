@@ -651,3 +651,277 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         }
     }
 }
+
+// import from obsidian
+
+@Suite struct ImportTests {
+    func vault(_ notes: [String: String]) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("import-vault-\(UUID().uuidString)")
+        for (path, text) in notes {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
+        return root
+    }
+
+    func config() -> AppConfig {
+        var c = AppConfig()
+        c.obsidianFilmFolder = "Culture/Film"
+        c.obsidianTVFolder = "Culture/Television"
+        return c
+    }
+
+    @Test func parsesNamesSeasonsAndYears() {
+        #expect(NoteImport.splitSeason("Silo - Season 3") == ("Silo", 3))
+        #expect(NoteImport.splitSeason("You Season 2") == ("You", 2))
+        #expect(NoteImport.splitSeason("Adolescence") == ("Adolescence", 1))
+        #expect(NoteImport.splitYear("A Christmas Carol (2019)").name == "A Christmas Carol")
+        #expect(NoteImport.splitYear("A Christmas Carol (2019)").year == 2019)
+        #expect(NoteImport.normalize("Dune - Part Two") == NoteImport.normalize("Dune: Part Two"))
+        #expect(NoteImport.normalize("Deadpool and Wolverine") == NoteImport.normalize("Deadpool & Wolverine"))
+        #expect(NoteImport.normalize("Shogun") == NoteImport.normalize("Shōgun"))
+    }
+
+    @Test func candidateReadsFrontmatterAndBody() {
+        let text = "---\nconnected_to: '[[Knives Out]]'\nfilm_series_index: 3\nfinished_on: 2025-12-29\nimdb_id: tt14364480\nrating: 3\nrewatch: false\nstars: \"\\u2605\\u2605\\u2605\"\ntype: Film\n---\n# Wake Up Dead Man\n\nFun one.\n\nSecond paragraph.\n"
+        let c = NoteImport.candidate(relativePath: "Culture/Film/Wake Up Dead Man.md", text: text, mediaType: .movie)
+        #expect(c.noteName == "Wake Up Dead Man")
+        #expect(c.imdbId == "tt14364480")
+        #expect(c.rating == 3)
+        #expect(c.finishedOn == "2025-12-29")
+        #expect(c.connectedTo == "Knives Out")
+        #expect(c.seriesIndex == 3)
+        #expect(c.body == "Fun one.\n\nSecond paragraph.")
+    }
+
+    @Test func updateKeepsExistingPropertiesWatchlistLeavesBlank() {
+        let existing = "---\ntype: Film\nrating: 4.5\nimdb_id: tt1\nimdb_rating: '7.6'\nrotten_tomatoes: 97%\nmy_rating_delta: -7\ntags:\n  - favorite\n---\n# X\n\nold\n"
+        let r = Review(tmdbId: 1, mediaType: .movie, noteTitle: "X", rating: 4, finishedOn: "2025-05-02", body: "new")
+        let merged = ObsidianNote.merge(generated: ObsidianNote.markdown(r, imdbId: "tt1"), existing: existing, rating: 4)
+        #expect(merged.contains("rating: 4\n"))
+        #expect(merged.contains("imdb_rating: '7.6'"))
+        #expect(merged.contains("rotten_tomatoes: 97%"))
+        #expect(merged.contains("my_rating_delta: -17"))
+        #expect(merged.contains("tags:\n  - favorite"))
+        #expect(merged.hasSuffix("# X\n\nnew\n"))
+        #expect(!merged.contains("old"))
+    }
+
+    @Test func matchesStampsAndAddsRunningShows() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-02-01")
+        mock.on("find/tt0075314", #"{"movie_results":[{"id":103,"title":"Taxi Driver","release_date":"1976-02-08","popularity":20}],"tv_results":[]}"#)
+        mock.on("search/movie", #"{"page":1,"results":[{"id":500,"title":"Cube","release_date":"1997-09-09","popularity":30},{"id":501,"title":"Cube","release_date":"2021-10-22","popularity":20}]}"#)
+        mock.on("search/tv", #"{"page":1,"results":[{"id":200,"name":"Test Show","first_air_date":"2020-01-01","popularity":50}]}"#)
+        mock.on("tv/200", Fixture.tv(last: (2, 8, "2026-01-20"), next: nil, seasons: [(1, 6), (2, 8)]))
+        let notes = [
+            "Culture/Film/Taxi Driver.md": "---\ntype: Film\nrating: 5\nfinished_on: 2024-01-01\nimdb_id: tt0075314\n---\n# Taxi Driver\n\nClassic.\n",
+            "Culture/Film/Cube.md": "---\ntype: Film\nrating: 3\nfinished_on: 2020-05-05\n---\n# Cube\n\nBoxy.\n",
+            "Culture/Television/Test Show - Season 1.md": "---\ntype: Television\nrating: 4\nfinished_on: 2025-03-01\nconnected_to: \"[[Test Show]]\"\n---\n# Test Show - Season 1\n\nGood.\n",
+            "Culture/Television/Test Show - Season 5.md": "---\ntype: Television\nrating: 2\nfinished_on: 2025-09-01\n---\n# Test Show - Season 5\n\nNope.\n",
+        ]
+        let root = try vault(notes)
+        let service = try makeService(mock, clock, config: config())
+
+        let scanned = try service.scanVaultForImport(vault: root)
+        #expect(scanned.count == 4)
+        let matched = try await service.matchImport(scanned)
+        func c(_ name: String) -> ImportCandidate { matched.first { $0.noteName == name }! }
+        #expect(c("Taxi Driver").status == .ready)
+        #expect(c("Taxi Driver").match?.via == "imdb id")
+        // the 2021 cube came out after the watch date, so the 1997 one is the clear match
+        #expect(c("Cube").status == .ready)
+        #expect(c("Cube").match?.tmdbId == 500)
+        #expect(c("Test Show - Season 1").status == .ready)
+        // the show only has two seasons
+        #expect(c("Test Show - Season 5").status == .check)
+        #expect(!c("Test Show - Season 5").include)
+
+        let summary = try await service.applyImport(matched, addRunningShows: true, vault: root)
+        #expect(summary.imported == 3)
+        #expect(summary.stamped == 3)
+        #expect(summary.skipped == 1)
+        #expect(summary.showsAdded == ["Test Show"])
+        #expect(summary.backup.map { FileManager.default.fileExists(atPath: $0.path) } == true)
+
+        let taxi = try String(contentsOf: root.appendingPathComponent("Culture/Film/Taxi Driver.md"), encoding: .utf8)
+        #expect(taxi == "---\ntype: Film\nrating: 5\nfinished_on: 2024-01-01\nimdb_id: tt0075314\nwatchlist_id: movie-103-0\n---\n# Taxi Driver\n\nClassic.\n")
+        let untouched = try String(contentsOf: root.appendingPathComponent("Culture/Television/Test Show - Season 5.md"), encoding: .utf8)
+        #expect(!untouched.contains("watchlist_id"))
+
+        let reviews = try service.reviews()
+        #expect(reviews.count == 3)
+        let season = reviews.first { $0.id == "tv-200-1" }!
+        #expect(season.body == "Good.")
+        #expect(season.connectedTo == "Test Show")
+        #expect(season.exportPath == "Culture/Television/Test Show - Season 1.md")
+        #expect(try service.openURL(for: season, vault: root).review.exportPath == season.exportPath)
+
+        // the running show is on the watchlist, watched through season 1, with season 2 as the backlog
+        let show = try service.resolve(200, .tv)
+        #expect(try service.unwatchedAired(show).count == 8)
+        #expect(try service.db.lastWatchedDay(tmdbId: 200, season: 1) == "2025-03-01")
+        // movies are not added to the watchlist
+        #expect(try service.titles().count == 1)
+
+        // a second scan sees the imported notes as already linked
+        let again = try await service.matchImport(try service.scanVaultForImport(vault: root))
+        #expect(again.filter { $0.status == .alreadyLinked }.count == 3)
+    }
+
+    @Test func ambiguousAndUndatedTitlesNeedACheck() async throws {
+        let mock = MockTransport()
+        mock.on("search/movie", #"{"page":1,"results":[{"id":1,"title":"Obsession","release_date":"2026-01-01","popularity":10},{"id":2,"title":"Obsession","release_date":"1976-08-01","popularity":8}]}"#)
+        let root = try vault(["Culture/Film/Obsession.md": "---\ntype: Film\nfinished_on: 2026-06-01\n---\n# Obsession\n"])
+        let service = try makeService(mock, Clock("2026-07-01"), config: config())
+        let matched = try await service.matchImport(try service.scanVaultForImport(vault: root))
+        #expect(matched[0].status == .check)
+        let fixed = service.rematch(matched[0], to: SearchResult(id: 2, mediaType: "movie", title: "Obsession", releaseDate: "1976-08-01"))
+        #expect(fixed.status == .ready && fixed.include && fixed.reviewId == "movie-2-0")
+    }
+
+    @Test func fixingToAnAlreadyMatchedTitleIsFlaggedAndNeverStamped() async throws {
+        let mock = MockTransport()
+        mock.on("find/tt1", #"{"movie_results":[{"id":9,"title":"Knives","release_date":"2025-12-12","popularity":5}],"tv_results":[]}"#)
+        mock.on("search/movie", #"{"page":1,"results":[]}"#)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dup-vault-\(UUID().uuidString)")
+        for (p, t) in ["Culture/Film/Knives A.md": "---\nimdb_id: tt1\n---\n# A\n", "Culture/Film/Knives B.md": "---\n---\n# B\n"] {
+            let u = root.appendingPathComponent(p)
+            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try t.write(to: u, atomically: true, encoding: .utf8)
+        }
+        var c = AppConfig(); c.obsidianFilmFolder = "Culture/Film"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        var matched = try await service.matchImport(try service.scanVaultForImport(vault: root))
+        let b = matched.firstIndex { $0.noteName == "Knives B" }!
+        matched[b] = service.rematch(matched[b], to: SearchResult(id: 9, mediaType: "movie", title: "Knives"))
+        matched = try service.flagDuplicates(matched)
+        #expect(matched[b].status == .duplicate && !matched[b].include)
+
+        // even if forced back on, apply refuses to stamp a second note with the same id
+        matched[b].include = true
+        matched[b].status = .ready
+        let summary = try await service.applyImport(matched, addRunningShows: false, backup: false, vault: root)
+        #expect(summary.stamped == 1)
+        #expect(summary.errors.contains { $0.hasPrefix("Knives B: skipped") })
+        #expect(!(try String(contentsOf: root.appendingPathComponent("Culture/Film/Knives B.md"), encoding: .utf8)).contains("watchlist_id"))
+    }
+}
+
+// renaming on import
+
+@Suite struct RenameTests {
+    @Test func rewriteKeepsFoldersHeadingsAndAliases() {
+        let text = "See [[Borat 2]], [[borat 2|the sequel]], [[Personal/Film/Borat 2#Ending]], ![[Borat 2]], but not [[Borat 20]] or [[Not Borat 2]]."
+        let (out, n) = NoteRename.rewrite(text, from: "Borat 2", to: "Borat Subsequent Moviefilm")
+        #expect(n == 4)
+        #expect(out == "See [[Borat Subsequent Moviefilm]], [[Borat Subsequent Moviefilm|the sequel]], [[Personal/Film/Borat Subsequent Moviefilm#Ending]], ![[Borat Subsequent Moviefilm]], but not [[Borat 20]] or [[Not Borat 2]].")
+    }
+
+    @Test func suggestedNameKeepsSeasonSuffix() {
+        let movie = NoteImport.candidate(relativePath: "F/Borat 2.md", text: "", mediaType: .movie)
+        #expect(NoteRename.suggestedName(for: movie, title: "Borat Subsequent Moviefilm: Delivery") == "Borat Subsequent Moviefilm - Delivery")
+        let season = NoteImport.candidate(relativePath: "T/Cabinet of Curiosities - Season 1.md", text: "", mediaType: .tv)
+        #expect(NoteRename.suggestedName(for: season, title: "Guillermo del Toro's Cabinet of Curiosities") == "Guillermo del Toro's Cabinet of Curiosities - Season 1")
+        let mini = NoteImport.candidate(relativePath: "T/Fyre Fest.md", text: "", mediaType: .tv)
+        #expect(NoteRename.suggestedName(for: mini, title: "FYRE") == "FYRE")
+    }
+
+    @Test func importRenamesNoteAndUpdatesLinks() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rename-vault-\(UUID().uuidString)")
+        let notes = [
+            "Culture/Film/Borat 2.md": "---\ntype: Film\nrating: 3.5\nfinished_on: 2020-10-30\n---\n# Borat 2\n\nVery nice.\n",
+            "Journal/2020-10-30.md": "Watched [[Borat 2]] tonight. Also [[Borat 2|the sequel]].\n",
+            "Culture/Film/Dune.md": "---\ntype: Film\n---\n# Dune\n",
+            "Culture/Indexes/Dune.md": "---\ntype: Film\n---\n# Dune\n",
+            "Journal/dune.md": "Loved [[Dune]].\n",
+            "Culture/Film/Taken.md": "---\ntype: Film\n---\n# Taken\n",
+        ]
+        for (p, t) in notes {
+            let u = root.appendingPathComponent(p)
+            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try t.write(to: u, atomically: true, encoding: .utf8)
+        }
+        var c = AppConfig()
+        c.obsidianFilmFolder = "Culture/Film"
+        c.obsidianTVFolder = "Culture/Television"
+        let mock = MockTransport()
+        mock.on("search/movie", #"{"page":1,"results":[]}"#)
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        var matched = try await service.matchImport(try service.scanVaultForImport(vault: root))
+        func idx(_ n: String) -> Int { matched.firstIndex { $0.noteName == n }! }
+        matched[idx("Borat 2")] = service.rematch(matched[idx("Borat 2")], to: SearchResult(id: 574451, mediaType: "movie", title: "Borat Subsequent Moviefilm"), renameTo: "Borat Subsequent Moviefilm")
+        matched[idx("Dune")] = service.rematch(matched[idx("Dune")], to: SearchResult(id: 438631, mediaType: "movie", title: "Dune"), renameTo: "Dune Part One")
+        matched[idx("Taken")] = service.rematch(matched[idx("Taken")], to: SearchResult(id: 8681, mediaType: "movie", title: "Taken"), renameTo: "Dune Part One")
+
+        let summary = try await service.applyImport(matched, addRunningShows: false, vault: root)
+        let renamedURL = root.appendingPathComponent("Culture/Film/Borat Subsequent Moviefilm.md")
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Culture/Film/Borat 2.md").path))
+        #expect(try String(contentsOf: renamedURL, encoding: .utf8) == "---\ntype: Film\nrating: 3.5\nfinished_on: 2020-10-30\nwatchlist_id: movie-574451-0\n---\n# Borat Subsequent Moviefilm\n\nVery nice.\n")
+        #expect(try String(contentsOf: root.appendingPathComponent("Journal/2020-10-30.md"), encoding: .utf8)
+                == "Watched [[Borat Subsequent Moviefilm]] tonight. Also [[Borat Subsequent Moviefilm|the sequel]].\n")
+        #expect(summary.linksUpdated == 2)
+
+        // dune shares its name with an index note, so its links are left alone
+        #expect(try String(contentsOf: root.appendingPathComponent("Journal/dune.md"), encoding: .utf8) == "Loved [[Dune]].\n")
+        #expect(summary.errors.contains { $0.contains("another note is also named Dune") })
+        // taken cannot take a name that is already used
+        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("Culture/Film/Taken.md").path))
+        #expect(summary.errors.contains { $0.hasPrefix("Taken: not renamed") })
+
+        let borat = try service.reviews().first { $0.tmdbId == 574451 }!
+        #expect(borat.noteTitle == "Borat Subsequent Moviefilm")
+        #expect(borat.exportPath == "Culture/Film/Borat Subsequent Moviefilm.md")
+        #expect(summary.backup != nil)
+    }
+}
+
+
+// ratings backfill
+
+@Suite struct FillRatingsTests {
+    @Test func setPropertiesFillsBlanksAndAppendsMissing() {
+        let text = "---\ntype: Film\nrating: 3\nimdb_rating:\nmetascore: '70'\n---\n# X\n\nBody.\n"
+        let (out, changed) = ObsidianNote.setProperties(text, [("imdb_rating", "'7.1'"), ("metascore", "'99'"), ("rotten_tomatoes", "80%")], overwrite: false)
+        #expect(out == "---\ntype: Film\nrating: 3\nimdb_rating: '7.1'\nmetascore: '70'\nrotten_tomatoes: 80%\n---\n# X\n\nBody.\n")
+        #expect(changed == ["imdb_rating", "rotten_tomatoes"])
+        let (refreshed, _) = ObsidianNote.setProperties(text, [("metascore", "'99'")], overwrite: true)
+        #expect(refreshed.contains("metascore: '99'"))
+    }
+
+    @Test func fillsMissingRatingsWithoutTouchingCompleteNotes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("fill-vault-\(UUID().uuidString)")
+        let notes = [
+            "Film/Blank.md": "---\ntype: Film\nrating: 3\nimdb_id:\nimdb_rating:\nrotten_tomatoes:\nmy_rating_delta:\nwatchlist_id: movie-100-0\n---\n# Blank\n\nText.\n",
+            "Film/Done.md": "---\ntype: Film\nrating: 4\nimdb_id: tt2\nimdb_rating: '8.0'\nimdb_votes: 10\nmetascore: '80'\nrotten_tomatoes: 90%\nmy_rating_delta: -10\nwatchlist_id: movie-200-0\n---\n# Done\n",
+        ]
+        for (p, t) in notes {
+            let u = root.appendingPathComponent(p)
+            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try t.write(to: u, atomically: true, encoding: .utf8)
+        }
+        let mock = MockTransport()
+        mock.on("movie/100", Fixture.movie(release: "2025-01-01").replacingOccurrences(of: "\"poster_path\":\"/p.jpg\",", with: "\"poster_path\":\"/p.jpg\",\"imdb_id\":\"tt1\","))
+        var c = AppConfig(); c.obsidianFilmFolder = "Film"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        for (id, title) in [(100, "Blank"), (200, "Done")] {
+            try service.saveReview(Review(tmdbId: id, mediaType: .movie, noteTitle: title, exportedAt: "2026-01-01T00:00:00Z", exportPath: "Film/\(title).md"))
+        }
+        let omdbTransport = MockTransport()
+        omdbTransport.routes["/"] = [(200, #"{"Response":"True","imdbRating":"7.2","imdbVotes":"1,234","Metascore":"N/A","Ratings":[{"Source":"Rotten Tomatoes","Value":"85%"}]}"#)]
+        let omdb = OMDbClient(apiKey: "k", db: service.db, transport: omdbTransport)
+
+        let dry = try await service.fillRatings(dryRun: true, omdb: omdb, vault: root)
+        #expect(dry.updated == ["Blank"])
+        #expect(!(try String(contentsOf: root.appendingPathComponent("Film/Blank.md"), encoding: .utf8)).contains("7.2"))
+
+        let s = try await service.fillRatings(omdb: omdb, vault: root)
+        #expect(s.updated == ["Blank"])
+        #expect(s.alreadyComplete == 1)
+        let blank = try String(contentsOf: root.appendingPathComponent("Film/Blank.md"), encoding: .utf8)
+        #expect(blank == "---\ntype: Film\nrating: 3\nimdb_id: tt1\nimdb_rating: '7.2'\nrotten_tomatoes: 85%\nmy_rating_delta: -25\nwatchlist_id: movie-100-0\nimdb_link: https://www.imdb.com/title/tt1/\nimdb_votes: 1,234\n---\n# Blank\n\nText.\n")
+        let done = try String(contentsOf: root.appendingPathComponent("Film/Done.md"), encoding: .utf8)
+        #expect(done == notes["Film/Done.md"])
+    }
+}

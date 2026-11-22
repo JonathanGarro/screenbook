@@ -12,6 +12,8 @@ struct ReviewEditor: View {
     @State private var conflict: ReviewError?
     @State private var error: String?
     @State private var confirmDelete = false
+    @State private var external: ExternalRatings?
+    @State private var loadedExternal = false
 
     private var finishedBinding: Binding<Date> {
         Binding(
@@ -52,6 +54,9 @@ struct ReviewEditor: View {
                                 .buttonStyle(.link)
                         }
                     }
+                }
+                if review.mediaType == .movie {
+                    LabeledContent("Ratings") { externalStrip }
                 }
                 DatePicker("Finished on", selection: finishedBinding, displayedComponents: .date)
                 Toggle("Rewatch", isOn: $review.rewatch)
@@ -112,6 +117,12 @@ struct ReviewEditor: View {
         }
         .padding(20)
         .frame(width: 640, height: 720)
+        .task {
+            if review.mediaType == .movie && model.hasOMDbKey && !loadedExternal {
+                external = await model.externalRatings(review)
+                loadedExternal = true
+            }
+        }
         .confirmationDialog(conflictTitle, isPresented: Binding(get: { conflict != nil }, set: { if !$0 { conflict = nil } })) {
             Button("Replace Note", role: .destructive) { Task { await send(overwrite: true) } }
             Button("Cancel", role: .cancel) { conflict = nil }
@@ -125,6 +136,31 @@ struct ReviewEditor: View {
             }
         } message: {
             Text(review.isSent ? "This removes it from Watchlist only. The note in Obsidian stays." : "The draft will be lost.")
+        }
+    }
+
+    @ViewBuilder
+    private var externalStrip: some View {
+        if !model.hasOMDbKey {
+            Text("Add an OMDb key in Settings to show IMDb, Metascore, and Rotten Tomatoes.")
+                .font(.caption).foregroundStyle(.secondary)
+        } else if !loadedExternal {
+            ProgressView().controlSize(.small)
+        } else if let e = external {
+            HStack(spacing: 14) {
+                if let v = e.imdbRating { Text("IMDb \(v)") }
+                if let v = e.metascore { Text("Metascore \(v)") }
+                if let v = e.rottenTomatoes { Text("RT \(v)") }
+                if let d = ObsidianNote.ratingDelta(rating: review.rating, rottenTomatoes: e.rottenTomatoes) {
+                    Text("Your delta \(d > 0 ? "+" : "")\(d)")
+                        .foregroundStyle(d >= 0 ? Color.green : Color.orange)
+                        .help("Your rating x 20 minus the Rotten Tomatoes score")
+                }
+            }
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+        } else {
+            Text("Not found on OMDb").font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -261,15 +297,24 @@ struct StarsLabel: View {
 
 struct ReviewsList: View {
     @Environment(AppModel.self) private var model
+    @State private var query = ""
+
+    private var filtered: [Review] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return model.reviews }
+        return model.reviews.filter { $0.noteTitle.localizedCaseInsensitiveContains(q) || $0.body.localizedCaseInsensitiveContains(q) }
+    }
 
     var body: some View {
-        let drafts = model.reviews.filter { !$0.isSent }
-        let sent = model.reviews.filter(\.isSent).sorted { ($0.finishedOn ?? "") > ($1.finishedOn ?? "") }
+        let drafts = filtered.filter { !$0.isSent }
+        let sent = filtered.filter(\.isSent).sorted { ($0.finishedOn ?? "") > ($1.finishedOn ?? "") }
         if model.reviews.isEmpty {
             ContentUnavailableView {
                 Label("No Reviews Yet", systemImage: "star.bubble")
             } description: {
-                Text("Open a movie and click Write Review, or open a show and review a season.")
+                Text("Open a movie and click Write Review, or open a show and review a season. Already review in Obsidian? Import those notes.")
+            } actions: {
+                Button("Import from Obsidian...") { model.showingImport = true }
             }
         } else {
             List {
@@ -279,11 +324,12 @@ struct ReviewsList: View {
                     }
                 }
                 if !sent.isEmpty {
-                    Section("Sent to Obsidian") {
+                    Section("Sent to Obsidian (\(sent.count))") {
                         ForEach(sent) { r in row(r) }
                     }
                 }
             }
+            .searchable(text: $query, placement: .toolbar, prompt: "Search reviews")
         }
     }
 

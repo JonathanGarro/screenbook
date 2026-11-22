@@ -14,6 +14,9 @@ commands:
   watch <tmdb_id> <season> <episode> [--unwatch]
   watch <tmdb_id> --all-up-to <season> <episode>
   available <tmdb_id> on|off                   treat every listed episode as released (streaming drops)
+  import-reviews [--apply] [--include-check] [--add-shows on|off]
+                                               link existing obsidian review notes (dry run unless --apply)
+  fill-ratings [--apply] [--refresh]           fill imdb, metascore, rotten tomatoes in linked movie notes (dry run unless --apply)
   digest [--force]                             write outputs/digest.md and print it
   export                                       write outputs/watchlist.csv
   config [--region XX] [--streaming on|off] [--rent-buy on|off]
@@ -196,6 +199,65 @@ do {
         try service.setAllAvailable(t, onOff(args[1]))
         let updated = try service.resolve(t.tmdbId, .tv)
         print("\(t.title): all episodes out is \(updated.allAvailable ? "on" : "off"), \(try service.unwatchedAired(updated).count) unwatched.")
+
+    case "import-reviews":
+        let apply = takeFlag(&args, "--apply")
+        let includeCheck = takeFlag(&args, "--include-check")
+        let addShows = takeOption(&args, "--add-shows").map(onOff) ?? true
+        let scanned = try service.scanVaultForImport()
+        print("Found \(scanned.count) notes. Matching on TMDB...")
+        var matched = try await service.matchImport(scanned) { done, total in
+            if done % 50 == 0 || done == total { print("  \(done)/\(total)") }
+        }
+        if includeCheck {
+            for i in matched.indices where matched[i].status == .check { matched[i].include = true }
+        }
+        func group(_ s: ImportStatus) -> [ImportCandidate] { matched.filter { $0.status == s } }
+        func label(_ c: ImportCandidate) -> String {
+            let m = c.match.map { "\($0.title)\($0.year.map { " (\($0))" } ?? "") [\($0.via)]" } ?? "no match"
+            let season = c.mediaType == .tv ? " S\(c.season)" : ""
+            return "  \(c.noteName) -> \(m)\(season)\(c.note.map { "  (\($0))" } ?? "")"
+        }
+        print("")
+        print("ready: \(group(.ready).count)  check: \(group(.check).count)  unmatched: \(group(.unmatched).count)  already linked: \(group(.alreadyLinked).count)  duplicate: \(group(.duplicate).count)")
+        for (name, s) in [("Check (closest guess)", ImportStatus.check), ("Unmatched", .unmatched), ("Duplicate", .duplicate)] where !group(s).isEmpty {
+            print("")
+            print("\(name):")
+            group(s).forEach { print(label($0)) }
+        }
+        if takeFlag(&args, "--list-title-matches") || ProcessInfo.processInfo.environment["WATCHLIST_LIST_MATCHES"] != nil {
+            print("")
+            print("Ready by title (not imdb id):")
+            matched.filter { $0.status == .ready && ($0.match?.via ?? "").hasPrefix("title") }.forEach { print(label($0)) }
+        }
+        if apply {
+            let summary = try await service.applyImport(matched, addRunningShows: addShows) { done, total in
+                if done % 100 == 0 || done == total { print("  applied \(done)/\(total)") }
+            }
+            print("")
+            print("Imported \(summary.imported) reviews, stamped \(summary.stamped) notes, skipped \(summary.skipped).")
+            if let b = summary.backup { print("Backup: \(b.path)") }
+            if !summary.showsAdded.isEmpty { print("Added running shows: \(summary.showsAdded.joined(separator: ", "))") }
+            summary.errors.forEach { print("Error: \($0)") }
+        } else {
+            print("")
+            print("Dry run. Nothing was written. Run with --apply to import (add --include-check to include closest guesses).")
+        }
+
+    case "fill-ratings":
+        let apply = takeFlag(&args, "--apply")
+        let refresh = takeFlag(&args, "--refresh")
+        let s = try await service.fillRatings(refresh: refresh, dryRun: !apply) { done, total in
+            if done % 50 == 0 || done == total { print("  \(done)/\(total)") }
+        }
+        print("")
+        print("\(apply ? "Updated" : "Would update") \(s.updated.count) notes. Already complete: \(s.alreadyComplete). Checked \(s.checked).")
+        if !s.updated.isEmpty { print("  " + s.updated.sorted().joined(separator: "\n  ")) }
+        if !s.noImdbId.isEmpty { print("No IMDb id on TMDB: " + s.noImdbId.sorted().joined(separator: ", ")) }
+        if !s.notOnOMDb.isEmpty { print("Not found on OMDb: " + s.notOnOMDb.sorted().joined(separator: ", ")) }
+        if !s.noteMissing.isEmpty { print("Note not found: " + s.noteMissing.sorted().joined(separator: ", ")) }
+        s.errors.forEach { print("Error: \($0)") }
+        if !apply { print("\nDry run. Nothing was written. Run with --apply to write.") }
 
     case "digest":
         let force = takeFlag(&args, "--force")

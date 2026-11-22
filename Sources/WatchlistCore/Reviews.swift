@@ -250,6 +250,117 @@ public enum ObsidianNote {
         }
     }
 
+    /// one frontmatter property with its raw lines (multi-line values keep their continuation lines)
+    public struct Property {
+        public var key: String
+        public var lines: [String]
+        public var value: String {
+            let first = lines[0]
+            let v = first.dropFirst(key.count + 1).trimmingCharacters(in: .whitespaces)
+            return lines.count > 1 && v.isEmpty ? lines.dropFirst().joined(separator: "\n") : v
+        }
+    }
+
+    /// splits a note into frontmatter properties and the body after the closing ---
+    public static func parse(_ text: String) -> (properties: [Property], body: String) {
+        let lines = text.components(separatedBy: "\n")
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
+              let close = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) else {
+            return ([], text)
+        }
+        var props: [Property] = []
+        for line in lines[1..<close] {
+            if let colon = line.firstIndex(of: ":"), !line.hasPrefix(" "), !line.hasPrefix("-"), !line.hasPrefix("\t") {
+                props.append(Property(key: String(line[..<colon]).trimmingCharacters(in: .whitespaces), lines: [line]))
+            } else if !props.isEmpty {
+                props[props.count - 1].lines.append(line)
+            }
+        }
+        return (props, lines[(close + 1)...].joined(separator: "\n"))
+    }
+
+    /// unquotes a simple yaml scalar and treats null as empty
+    public static func scalar(_ raw: String) -> String {
+        var v = raw.trimmingCharacters(in: .whitespaces)
+        if v.count >= 2, let f = v.first, let l = v.last, (f == "\"" && l == "\"") || (f == "'" && l == "'") {
+            v = String(v.dropFirst().dropLast())
+        }
+        return v == "null" || v == "~" ? "" : v
+    }
+
+    static func isBlank(_ raw: String) -> Bool { scalar(raw).isEmpty }
+
+    /// generated frontmatter wins where it has a value; existing values fill its blanks; extra existing keys are kept
+    public static func merge(generated: String, existing: String, rating: Double?) -> String {
+        let gen = parse(generated)
+        let old = parse(existing)
+        guard !old.properties.isEmpty else { return generated }
+        var oldByKey: [String: Property] = [:]
+        for p in old.properties { oldByKey[p.key] = p }
+        var out: [String] = ["---"]
+        var used = Set<String>()
+        for p in gen.properties {
+            used.insert(p.key)
+            if isBlank(p.value), let o = oldByKey[p.key], !isBlank(o.value) {
+                if p.key == "my_rating_delta", let delta = ratingDelta(rating: rating, rottenTomatoes: oldByKey["rotten_tomatoes"].map { scalar($0.value) }) {
+                    out.append("my_rating_delta: \(delta)")
+                } else {
+                    out += o.lines
+                }
+            } else if p.key == "my_rating_delta", isBlank(p.value),
+                      let delta = ratingDelta(rating: rating, rottenTomatoes: oldByKey["rotten_tomatoes"].map { scalar($0.value) }) {
+                out.append("my_rating_delta: \(delta)")
+            } else {
+                out += p.lines
+            }
+        }
+        for p in old.properties where !used.contains(p.key) {
+            out += p.lines
+        }
+        out.append("---")
+        return out.joined(separator: "\n") + "\n" + gen.body.drop(while: { $0 == "\n" })
+    }
+
+    /// sets frontmatter properties, appending ones that are missing. existing values are only replaced when
+    /// blank, unless overwrite is true. returns the new text and the keys that changed.
+    public static func setProperties(_ text: String, _ values: [(String, String)], overwrite: Bool) -> (String, [String]) {
+        var (props, body) = parse(text)
+        let hadFrontmatter = !props.isEmpty || text.hasPrefix("---")
+        var changed: [String] = []
+        for (key, value) in values where !value.isEmpty {
+            let line = "\(key): \(value)"
+            if let i = props.firstIndex(where: { $0.key == key }) {
+                if (isBlank(props[i].value) || overwrite) && props[i].lines != [line] {
+                    props[i].lines = [line]
+                    changed.append(key)
+                }
+            } else {
+                props.append(Property(key: key, lines: [line]))
+                changed.append(key)
+            }
+        }
+        guard !changed.isEmpty else { return (text, []) }
+        let front = "---\n" + props.flatMap(\.lines).joined(separator: "\n") + "\n---\n"
+        return (front + (hadFrontmatter ? body : text), changed)
+    }
+
+    /// the property values a note stores for external ratings, in the vault's existing format
+    public static func ratingProperties(imdbId: String?, ratings: ExternalRatings?, rating: Double?) -> [(String, String)] {
+        var out: [(String, String)] = []
+        if let imdbId, !imdbId.isEmpty {
+            out.append(("imdb_id", imdbId))
+            out.append(("imdb_link", "https://www.imdb.com/title/\(imdbId)/"))
+        }
+        if let r = ratings {
+            if let v = r.imdbRating { out.append(("imdb_rating", "'\(v)'")) }
+            if let v = r.imdbVotes { out.append(("imdb_votes", v)) }
+            if let v = r.metascore { out.append(("metascore", "'\(v)'")) }
+            if let v = r.rottenTomatoes { out.append(("rotten_tomatoes", v)) }
+            if let d = ratingDelta(rating: rating, rottenTomatoes: r.rottenTomatoes) { out.append(("my_rating_delta", String(d))) }
+        }
+        return out
+    }
+
     /// minimal show index note in the vault's existing style
     public static func indexNote(name: String) -> String {
         "---\ntype: Television\n---\n# \(name)\n"
@@ -285,7 +396,80 @@ public enum ReviewError: Error, LocalizedError, Equatable {
 
 // service
 
+public struct RatingsFillSummary: Sendable {
+    public var updated: [String] = []
+    public var alreadyComplete = 0
+    public var noImdbId: [String] = []
+    public var notOnOMDb: [String] = []
+    public var noteMissing: [String] = []
+    public var errors: [String] = []
+    public var checked = 0
+}
+
+public enum RatingsError: Error, LocalizedError {
+    case noOMDbKey
+    public var errorDescription: String? { "No OMDb key. Add one in Settings, Obsidian Reviews." }
+}
+
 extension WatchlistService {
+    /// imdb id from tmdb and ratings from omdb for a movie, both cached
+    public func externalRatings(tmdbId: Int, omdb: OMDbClient? = nil) async throws -> (imdbId: String?, ratings: ExternalRatings?) {
+        guard let client else { throw TMDBError.missingAPIKey }
+        let imdb = try await client.movie(tmdbId, ttl: CacheTTL.providers).imdbId.flatMap { $0.isEmpty ? nil : $0 }
+        guard let imdb, let omdb = omdb ?? omdbClient else { return (imdb, nil) }
+        return (imdb, try await omdb.ratings(imdbId: imdb))
+    }
+
+    /// fills imdb, metascore, rotten tomatoes, and my_rating_delta in linked movie notes.
+    /// only blank or missing properties are written unless refresh is true. dryRun reports without writing.
+    public func fillRatings(refresh: Bool = false, dryRun: Bool = false, omdb explicitOMDb: OMDbClient? = nil,
+                            vault explicit: URL? = nil, progress: ((Int, Int) -> Void)? = nil) async throws -> RatingsFillSummary {
+        guard let omdb = explicitOMDb ?? omdbClient else { throw RatingsError.noOMDbKey }
+        let vault = try vaultURL(explicit)
+        var summary = RatingsFillSummary()
+        let movies = try db.allReviews().filter { $0.mediaType == .movie && $0.isSent }
+        let needed = ["imdb_id", "imdb_rating", "imdb_votes", "metascore", "rotten_tomatoes", "my_rating_delta"]
+
+        for (i, r) in movies.enumerated() {
+            progress?(i + 1, movies.count)
+            summary.checked += 1
+            guard let path = (try? locateNote(r, vault: vault)) ?? nil else { summary.noteMissing.append(r.noteTitle); continue }
+            let url = vault.appendingPathComponent(path)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { summary.noteMissing.append(r.noteTitle); continue }
+            var values: [String: String] = [:]
+            for p in ObsidianNote.parse(text).properties { values[p.key] = ObsidianNote.scalar(p.value) }
+            let rating = values["rating"].flatMap(Double.init)
+            let complete = needed.allSatisfy { key in
+                if key == "my_rating_delta" && rating == nil { return true }
+                return !(values[key] ?? "").isEmpty
+            }
+            if complete && !refresh { summary.alreadyComplete += 1; continue }
+
+            do {
+                var imdb = values["imdb_id"].flatMap { $0.hasPrefix("tt") ? $0 : nil }
+                if imdb == nil, let client {
+                    imdb = try await client.movie(r.tmdbId, ttl: CacheTTL.providers).imdbId.flatMap { $0.isEmpty ? nil : $0 }
+                }
+                guard let imdb else { summary.noImdbId.append(r.noteTitle); continue }
+                guard let ratings = try await omdb.ratings(imdbId: imdb) else { summary.notOnOMDb.append(r.noteTitle); continue }
+                let props = ObsidianNote.ratingProperties(imdbId: imdb, ratings: ratings, rating: rating)
+                // ids are never replaced; scores are replaced only on refresh
+                let ids = props.filter { $0.0 == "imdb_id" || $0.0 == "imdb_link" }
+                let scores = props.filter { $0.0 != "imdb_id" && $0.0 != "imdb_link" }
+                var (out, changed) = ObsidianNote.setProperties(text, ids, overwrite: false)
+                let second = ObsidianNote.setProperties(out, scores, overwrite: refresh)
+                out = second.0
+                changed += second.1
+                if changed.isEmpty { summary.alreadyComplete += 1; continue }
+                if !dryRun { try out.write(to: url, atomically: true, encoding: .utf8) }
+                summary.updated.append(r.noteTitle)
+            } catch {
+                summary.errors.append("\(r.noteTitle): \(error.localizedDescription)")
+            }
+        }
+        return summary
+    }
+
     public func reviews() throws -> [Review] {
         try db.allReviews()
     }
@@ -426,7 +610,12 @@ extension WatchlistService {
         }
 
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try ObsidianNote.markdown(review, imdbId: imdbId, ratings: ratings).write(to: url, atomically: true, encoding: .utf8)
+        var text = ObsidianNote.markdown(review, imdbId: imdbId, ratings: ratings)
+        if fm.fileExists(atPath: url.path), let existing = try? String(contentsOf: url, encoding: .utf8) {
+            // keep property values watchlist would leave blank, and any properties it does not manage
+            text = ObsidianNote.merge(generated: text, existing: existing, rating: review.rating)
+        }
+        try text.write(to: url, atomically: true, encoding: .utf8)
 
         // create the show index note the season links to, if index notes are enabled and it is missing
         let indexFolder = config.obsidianIndexFolder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))

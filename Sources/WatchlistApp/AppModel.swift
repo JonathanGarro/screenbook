@@ -52,6 +52,8 @@ final class AppModel {
     var seasonsByTitle: [String: [SeasonSummary]] = [:]
     var reviews: [Review] = []
     var editingReview: Review?
+    var showingImport = false
+    var showingFillRatings = false
     var report: CheckReport?
     var selection: SidebarItem? = .whatsNew
     var selectedTitleID: String?
@@ -415,6 +417,11 @@ final class AppModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func externalRatings(_ r: Review) async -> ExternalRatings? {
+        guard r.mediaType == .movie, let service else { return nil }
+        return try? await service.externalRatings(tmdbId: r.tmdbId).ratings
     }
 
     var hasOMDbKey: Bool { APIKeyStore.resolve(paths, name: APIKeyStore.omdbVariableName) != nil }
