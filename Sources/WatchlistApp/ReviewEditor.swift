@@ -7,6 +7,8 @@ struct ReviewEditor: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State var review: Review
+    /// the last saved, sent, or synced version, to tell whether there are pending edits
+    @State private var baseline: Review?
     @State private var sending = false
     @State private var sentURL: URL?
     @State private var conflict: ReviewError?
@@ -106,28 +108,38 @@ struct ReviewEditor: View {
                     Button("Delete", role: .destructive) { confirmDelete = true }
                 }
                 Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save Draft") {
-                    model.saveReview(review)
-                    dismiss()
+                if justSent && !hasEdits {
+                    // nothing left to do after a successful send; one clear way out
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button(hasEdits ? "Cancel" : "Close") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                    Button("Save Draft") {
+                        model.saveReview(review)
+                        dismiss()
+                    }
+                    .disabled(!hasEdits && model.hasSavedReview(review))
+                    Button(sending ? "Sending..." : (review.isSent ? "Update in Obsidian" : "Send to Obsidian")) {
+                        Task { await send(overwrite: false) }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(sending || review.noteTitle.trimmingCharacters(in: .whitespaces).isEmpty
+                              || (review.isSent && !hasEdits && !review.localEdits))
                 }
-                Button(sending ? "Sending..." : (review.isSent ? "Update in Obsidian" : "Send to Obsidian")) {
-                    Task { await send(overwrite: false) }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(sending || review.noteTitle.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(20)
         .frame(width: 640, height: 720)
         .task {
+            if baseline == nil && model.hasSavedReview(review) { baseline = review }
             if review.isSent {
                 let before = review
                 let (synced, state) = model.syncOne(review)
                 syncState = state
                 if synced != before {
                     review = synced
+                    baseline = synced
                     pulledFromNote = state == .inSync
                 }
             }
@@ -160,6 +172,7 @@ struct ReviewEditor: View {
                 Button("Use Obsidian Version") {
                     let (synced, state) = model.syncOne(review, force: true)
                     review = synced
+                    baseline = synced
                     syncState = state
                     pulledFromNote = true
                 }
@@ -215,6 +228,16 @@ struct ReviewEditor: View {
         }
     }
 
+    private var justSent: Bool { sentURL != nil }
+
+    /// true when the fields differ from the last saved, sent, or synced version
+    private var hasEdits: Bool {
+        guard let b = baseline else { return true }
+        return b.noteTitle != review.noteTitle || b.rating != review.rating || b.finishedOn != review.finishedOn
+            || b.body != review.body || b.rewatch != review.rewatch || (b.connectedTo ?? "") != (review.connectedTo ?? "")
+            || b.seriesIndex != review.seriesIndex
+    }
+
     private var conflictTitle: String {
         if case .noteExists(_, let edited) = conflict, edited { return "Note changed in Obsidian" }
         return "Note already exists"
@@ -253,6 +276,7 @@ struct ReviewEditor: View {
         error = nil
         do {
             review = try model.relinkNote(review, file: url)
+            baseline = review
             syncState = .inSync
         } catch {
             self.error = error.localizedDescription
@@ -266,6 +290,7 @@ struct ReviewEditor: View {
         do {
             let result = try await model.sendReview(review, overwrite: overwrite)
             review = result.review
+            baseline = result.review
             sentURL = result.url
         } catch let e as ReviewError {
             if case .noteExists = e { conflict = e } else { error = e.localizedDescription }
