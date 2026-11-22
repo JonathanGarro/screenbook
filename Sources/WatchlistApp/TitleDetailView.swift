@@ -203,10 +203,13 @@ struct ProviderStrip: View {
 struct EpisodesSection: View {
     @Environment(AppModel.self) private var model
     let title: Title
-    @State private var season: Int = 1
+    /// nil until the starting season is chosen, so nothing loads for the wrong season first
+    @State private var chosenSeason: Int?
     @State private var episodes: [EpisodeDetail] = []
     @State private var loading = false
     @State private var loadError: String?
+
+    private var season: Int { chosenSeason ?? 1 }
 
     var body: some View {
         let seasons = model.seasons(title).filter { $0.seasonNumber > 0 }
@@ -216,7 +219,7 @@ struct EpisodesSection: View {
                 Text("Episodes").font(.headline)
                 Spacer()
                 if !seasons.isEmpty {
-                    Picker("Season", selection: $season) {
+                    Picker("Season", selection: Binding(get: { season }, set: { chosenSeason = $0 })) {
                         ForEach(seasons, id: \.seasonNumber) { s in
                             Text(s.name ?? "Season \(s.seasonNumber)").tag(s.seasonNumber)
                         }
@@ -259,7 +262,7 @@ struct EpisodesSection: View {
             .toggleStyle(.checkbox)
             .font(.callout)
 
-            if loading {
+            if loading || chosenSeason == nil {
                 ProgressView().controlSize(.small)
             } else if let loadError {
                 Text(loadError).foregroundStyle(.secondary)
@@ -279,15 +282,14 @@ struct EpisodesSection: View {
                 }
             }
         }
-        .task(id: season) {
-            await load()
-        }
-        .onAppear {
-            // open on the season with the first unwatched episode, else the latest aired season
-            let unwatchedFirst = (try? model.service?.unwatchedAired(title).first) ?? nil
-            if let s = unwatchedFirst?.season ?? title.lastAiredSeason ?? seasons.last?.seasonNumber {
-                season = s
+        .task(id: chosenSeason) {
+            if chosenSeason == nil {
+                // open on the season with the first unwatched episode, else the latest aired season
+                let unwatchedFirst = (try? model.service?.unwatchedAired(title).first) ?? nil
+                chosenSeason = unwatchedFirst?.season ?? title.lastAiredSeason ?? seasons.last?.seasonNumber ?? 1
+                return
             }
+            await load()
         }
     }
 
@@ -300,15 +302,22 @@ struct EpisodesSection: View {
     }
 
     private func load() async {
+        guard let requested = chosenSeason else { return }
         loading = true
         loadError = nil
-        defer { loading = false }
         do {
-            episodes = try await model.episodes(title, season: season)
+            let result = try await model.episodes(title, season: requested)
+            // a newer load for another season owns the screen now
+            guard !Task.isCancelled, requested == chosenSeason else { return }
+            episodes = result
+            loadError = nil
         } catch {
+            guard !Task.isCancelled, requested == chosenSeason else { return }
+            if error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             episodes = []
             loadError = error.localizedDescription
         }
+        loading = false
     }
 }
 
