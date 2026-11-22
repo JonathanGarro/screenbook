@@ -46,9 +46,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# ad hoc signature so gatekeeper lets a locally built app run
-codesign --force --sign - "$APP" >/dev/null
-codesign --force --sign - build/bin/watchlist >/dev/null
+# sign with a local apple development identity when one exists, so macOS treats every rebuild as the
+# same app and remembers privacy permissions (like access to the documents folder). otherwise ad hoc.
+# override with SIGN_IDENTITY="name or hash", or SIGN_IDENTITY=- to force ad hoc.
+IDENTITY="${SIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+    IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')"
+fi
+IDENTITY="${IDENTITY:--}"
+codesign --force --sign "$IDENTITY" "$APP" >/dev/null
+codesign --force --sign "$IDENTITY" build/bin/watchlist >/dev/null
+if [ "$IDENTITY" = "-" ]; then
+    echo "Signed ad hoc (no Apple Development identity found)"
+else
+    echo "Signed with a local Apple Development identity"
+fi
 
 # nudge finder and the dock to pick up the new icon
 touch "$APP"

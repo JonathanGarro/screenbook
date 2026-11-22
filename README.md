@@ -31,6 +31,7 @@ Requirements: macOS 14 or later and Xcode (the build script uses `/Applications/
    ./build_app.sh
    ```
    This produces `build/Watchlist.app` and `build/bin/watchlist` (the CLI).
+   If your keychain has an Apple Development signing identity (any free Apple account set up in Xcode has one), the script signs with it, so macOS treats every rebuild as the same app and remembers permissions such as access to a vault in Documents. Without one it signs ad hoc, and macOS may ask for folder access again after each rebuild. Set `SIGN_IDENTITY` to pick a different identity, or `SIGN_IDENTITY=-` for ad hoc.
 3. Open `build/Watchlist.app` (drag it to /Applications if you like). Open Settings (Cmd+,) and paste the key.
    You can also set the key without the app:
    - `build/bin/watchlist config --api-key YOUR_KEY`, or
