@@ -57,6 +57,11 @@ public struct ImportCandidate: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public struct LinkError: Error, LocalizedError {
+    public let message: String
+    public var errorDescription: String? { message }
+}
+
 public struct ImportSummary: Sendable {
     public var imported = 0
     public var stamped = 0
@@ -386,6 +391,24 @@ extension WatchlistService {
         if results.isEmpty, c.yearHint != nil { results = try await client.searchShows(c.searchName) }
         guard let (r, status, via) = pick(results, name: c.searchName, year: c.yearHint, watchedBy: c.finishedOn) else { return (nil, .unmatched) }
         return (ImportMatch(tmdbId: r.id, title: r.displayTitle, year: r.year, via: via), status)
+    }
+
+    /// notes in the movie and tv folders that do not carry a watchlist_id yet. no network.
+    public func unlinkedNotes(vault explicit: URL? = nil) throws -> [ImportCandidate] {
+        try scanVaultForImport(vault: explicit).filter { $0.existingId == nil }
+    }
+
+    /// links one note to a tmdb title (optionally renaming it) and records it as a sent review
+    @discardableResult
+    public func linkNote(_ c: ImportCandidate, to result: SearchResult, renameTo: String? = nil,
+                         vault explicit: URL? = nil) async throws -> String {
+        let chosen = rematch(c, to: result, renameTo: renameTo)
+        guard let id = chosen.reviewId else { throw ReviewError.noteNotFound }
+        let summary = try await applyImport([chosen], addRunningShows: false, backup: renameTo != nil, vault: explicit)
+        if summary.imported == 0, let problem = summary.errors.first {
+            throw LinkError(message: problem)
+        }
+        return id
     }
 
     /// points a candidate at a result the user picked by hand

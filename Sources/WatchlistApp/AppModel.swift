@@ -7,15 +7,14 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, upcoming, unwatched, library, reviews, insights
+    case whatsNew, unwatched, library, reviews, insights
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
         case .whatsNew: return "What's New"
-        case .upcoming: return "Upcoming"
-        case .unwatched: return "Unwatched"
+        case .unwatched: return "To Watch"
         case .library: return "Library"
         case .reviews: return "Reviews"
         case .insights: return "Insights"
@@ -24,9 +23,8 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
 
     var symbol: String {
         switch self {
-        case .whatsNew: return "sparkles"
-        case .upcoming: return "calendar"
-        case .unwatched: return "eye.slash"
+        case .whatsNew: return "calendar"
+        case .unwatched: return "play.circle"
         case .library: return "books.vertical"
         case .reviews: return "star.bubble"
         case .insights: return "chart.dots.scatter"
@@ -42,7 +40,7 @@ enum LibraryType: String, CaseIterable, Identifiable {
 }
 
 enum LibraryStatus: String, CaseIterable, Identifiable {
-    case toWatch = "To Watch", watched = "Watched", stopped = "Stopped", all = "All"
+    case toWatch = "To Watch", waiting = "Waiting", watched = "Watched", stopped = "Stopped", all = "All"
     var id: String { rawValue }
 }
 
@@ -58,9 +56,11 @@ struct LibraryEntry: Identifiable, Hashable {
     var finishedOn: String?
     var stoppedOn: String?
     var reviews: [Review]
+    /// set for a vault note that is not linked to a tmdb title yet
+    var note: ImportCandidate? = nil
 
     /// the latest rating, for the row
-    var rating: Double? { reviews.max { ($0.finishedOn ?? "") < ($1.finishedOn ?? "") }?.rating }
+    var rating: Double? { note?.rating ?? reviews.max { ($0.finishedOn ?? "") < ($1.finishedOn ?? "") }?.rating }
 }
 
 // model
@@ -91,7 +91,13 @@ final class AppModel {
     private var activeObserver: NSObjectProtocol?
     var report: CheckReport?
     var selection: SidebarItem? = .whatsNew
+    var calendarEvents: [CalendarEvent] = []
+    /// vault notes without a watchlist_id, shown in the library so nothing is hidden from search
+    var unlinkedNotes: [ImportCandidate] = []
+    var calendarLoading = false
     var libraryType: LibraryType = .all
+    /// type filter for the to watch list
+    var toWatchType: LibraryType = .all
     var libraryStatus: LibraryStatus = .toWatch
     var librarySearch = ""
     /// posters and details for history titles, filled lazily as rows appear
@@ -182,12 +188,16 @@ final class AppModel {
         let tracked = titles.filter { !$0.isStopped }
         switch item {
         case .whatsNew, .reviews, .insights, .library:
+            _ = day
             return []
-        case .upcoming:
-            return tracked.filter { $0.nextDate(today: day) != nil }
-                .sorted { ($0.nextDate(today: day) ?? "") < ($1.nextDate(today: day) ?? "") }
         case .unwatched:
-            return tracked.filter { (unwatched[$0.id] ?? 0) > 0 }
+            // everything you can watch now, the same as library's to watch: shows with unwatched episodes
+            // and released movies you have not seen. shows with the most unwatched first, then movies by title.
+            return tracked.filter { !isFinished($0) && canWatchNow($0) }.sorted { a, b in
+                let ua = unwatched[a.id] ?? 0, ub = unwatched[b.id] ?? 0
+                if (a.mediaType == .tv) != (b.mediaType == .tv) { return a.mediaType == .tv }
+                return ua == ub ? a.title.localizedStandardCompare(b.title) == .orderedAscending : ua > ub
+            }
         }
     }
 
@@ -201,10 +211,15 @@ final class AppModel {
             reviewsById["\(r.mediaType.rawValue)-\(r.tmdbId)", default: []].append(r)
         }
         for t in titles {
-            let status: LibraryStatus = t.isStopped ? .stopped : (isFinished(t) ? .watched : .toWatch)
+            let status: LibraryStatus = t.isStopped ? .stopped : (isFinished(t) ? .watched : (canWatchNow(t) ? .toWatch : .waiting))
             byId[t.id] = LibraryEntry(id: t.id, tmdbId: t.tmdbId, mediaType: t.mediaType, name: t.title, status: status,
                                       onWatchlist: true, finishedOn: isFinished(t) ? finishedDate(t) : nil,
                                       stoppedOn: t.stoppedOn, reviews: reviewsById[t.id] ?? [])
+        }
+        for c in unlinkedNotes {
+            let id = "note-\(c.relativePath)"
+            byId[id] = LibraryEntry(id: id, tmdbId: 0, mediaType: c.mediaType, name: c.noteName, status: .watched,
+                                    onWatchlist: false, finishedOn: c.finishedOn, stoppedOn: nil, reviews: [], note: c)
         }
         for (id, rs) in reviewsById where byId[id] == nil {
             let first = rs.min { $0.season < $1.season }!
@@ -220,12 +235,22 @@ final class AppModel {
         let type = type ?? libraryType
         let status = status ?? libraryStatus
         let q = (search ?? librarySearch).trimmingCharacters(in: .whitespaces)
+        // a search looks across every status, so a title is found wherever it lives
         let entries = libraryEntries.filter { e in
             (type == .all || (type == .movies) == (e.mediaType == .movie))
-                && (status == .all || e.status == status)
-                && (q.isEmpty || e.name.localizedCaseInsensitiveContains(q))
+                && (!q.isEmpty || status == .all || e.status == status)
+                && (q.isEmpty || e.name.localizedCaseInsensitiveContains(q)
+                    || e.reviews.contains { $0.noteTitle.localizedCaseInsensitiveContains(q) })
+        }
+        if !q.isEmpty {
+            return entries.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         }
         switch status {
+        case .waiting:
+            // soonest next date first
+            let day = today
+            func next(_ e: LibraryEntry) -> String { title(e.id)?.nextDate(today: day) ?? "9999" }
+            return entries.sorted { (next($0), $0.name) < (next($1), $1.name) }
         case .watched:
             return entries.sorted { ($0.finishedOn ?? "", $1.name) > ($1.finishedOn ?? "", $0.name) }
         case .stopped:
@@ -238,6 +263,61 @@ final class AppModel {
     func libraryEntry(_ id: String?) -> LibraryEntry? {
         guard let id else { return nil }
         return libraryEntries.first { $0.id == id }
+    }
+
+    /// rescans the vault for notes without a watchlist_id, off the main thread
+    func loadUnlinkedNotes() async {
+        guard let service, ObsidianVault.resolve(config) != nil else { return }
+        if let notes = try? await Task.detached(operation: { try service.unlinkedNotes() }).value {
+            unlinkedNotes = notes
+            libraryEntries = buildLibrary()
+        }
+    }
+
+    /// links a vault note to a tmdb title and selects it in the library
+    func linkNote(_ c: ImportCandidate, to result: SearchResult, renameTo: String?) async -> Bool {
+        guard let service else { return false }
+        do {
+            let id = try await service.linkNote(c, to: result, renameTo: renameTo)
+            reload()
+            await loadUnlinkedNotes()
+            if let (type, tmdb, _) = NoteImport.parseId(id) { selectedTitleID = "\(type.rawValue)-\(tmdb)" }
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// the next 30 days of episodes and releases for the calendar
+    func loadCalendar() async {
+        guard let service, hasKey, !calendarLoading else { return }
+        calendarLoading = true
+        defer { calendarLoading = false }
+        if let events = try? await service.calendarEvents(days: 30) { calendarEvents = events }
+        calendarLoading = false
+        if let path = UserDefaults.standard.string(forKey: "renderCalendarTo") {
+            renderImage(CalendarContent(), to: path)
+        }
+    }
+
+    /// debug: writes a view to light and dark images for layout checks
+    func renderImage<V: View>(_ content: V, to path: String) {
+        for (suffix, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+            let view = content
+                .environment(self)
+                .frame(width: 1100)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .environment(\.colorScheme, scheme)
+            NSApp.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path.replacingOccurrences(of: ".png", with: "-\(suffix).png")))
+            }
+        }
+        NSApp.appearance = nil
     }
 
     /// fetches a history title's poster and details once
@@ -266,8 +346,22 @@ final class AppModel {
         case .movie:
             return t.watchedOn != nil
         case .tv:
+            // a miniseries is done once you have seen it all, even if tmdb still lists it as airing
             let ended = ["Ended", "Canceled", "Cancelled"].contains(t.status ?? "")
+                || t.seriesType?.caseInsensitiveCompare("Miniseries") == .orderedSame
             return ended && (unwatched[t.id] ?? 0) == 0 && !(watchedByTitle[t.id] ?? []).isEmpty
+        }
+    }
+
+    /// something is available to watch today: unwatched aired episodes, or a released movie you have not seen
+    func canWatchNow(_ t: Title) -> Bool {
+        switch t.mediaType {
+        case .tv:
+            return (unwatched[t.id] ?? 0) > 0
+        case .movie:
+            let day = today
+            let released = [t.regionReleaseDate, t.digitalReleaseDate].compactMap { $0 }.contains { $0 <= day }
+            return t.watchedOn == nil && released
         }
     }
 
@@ -355,6 +449,7 @@ final class AppModel {
             }
             report = r
             reload()
+            await loadCalendar()
             if config.notifyNewEpisodes {
                 await Notifier.post(r.newEpisodeShows)
             }
@@ -371,12 +466,30 @@ final class AppModel {
         return try await service.search(text)
     }
 
+    /// selects a title, switching views if it does not belong in the current list
+    func showInList(_ t: Title) {
+        let visibleHere: Bool
+        switch selection {
+        case .unwatched: visibleHere = items(for: .unwatched).contains { $0.id == t.id }
+        case .library:
+            let e = libraryEntries.first { $0.id == t.id }
+            visibleHere = libraryStatus == .all || e?.status == libraryStatus
+        default: visibleHere = false
+        }
+        if !visibleHere {
+            selection = .library
+            libraryStatus = libraryEntries.first { $0.id == t.id }?.status ?? .all
+            librarySearch = ""
+        }
+        selectedTitleID = t.id
+    }
+
     func add(_ result: SearchResult, caughtUp: Bool) async -> Bool {
         guard let service else { return false }
         do {
             let t = try await service.add(result, caughtUp: caughtUp)
             reload()
-            selectedTitleID = t.id
+            showInList(t)
             return true
         } catch {
             errorMessage = error.localizedDescription
@@ -496,6 +609,7 @@ final class AppModel {
         lastReviewSync = Date()
         do {
             let summary = try await Task.detached { try service.syncReviewsFromObsidian() }.value
+            await loadUnlinkedNotes()
             reviewStates = summary.states
             if !summary.pulled.isEmpty { reload() }
             return summary

@@ -17,12 +17,11 @@ struct LibraryList: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 Picker("Status", selection: $model.libraryStatus) {
-                    ForEach(LibraryStatus.allCases) { s in
-                        Text("\(s.rawValue) \(model.filteredLibrary(status: s, search: "").count)").tag(s)
-                    }
+                    ForEach(LibraryStatus.allCases) { s in Text(s.rawValue).tag(s) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
+                .help("To Watch: available now. Waiting: caught up or not out yet. Watched: done, including your review history.")
                 TextField("Search library", text: $model.librarySearch)
                     .textFieldStyle(.roundedBorder)
             }
@@ -36,8 +35,15 @@ struct LibraryList: View {
                 }
                 .frame(maxHeight: .infinity)
             } else {
+                Text(model.librarySearch.trimmingCharacters(in: .whitespaces).isEmpty
+                     ? "\(entries.count) \(entries.count == 1 ? "title" : "titles")"
+                     : "Searching all of your library: \(entries.count) found")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
                 List(entries, selection: $model.selectedTitleID) { e in
-                    LibraryRow(entry: e)
+                    LibraryRow(entry: e, showStatus: !model.librarySearch.trimmingCharacters(in: .whitespaces).isEmpty)
                         .tag(e.id)
                         .contextMenu { menu(e) }
                 }
@@ -48,7 +54,8 @@ struct LibraryList: View {
     private var emptyText: String {
         if !model.librarySearch.isEmpty { return "No titles match your search." }
         switch model.libraryStatus {
-        case .toWatch: return "Add a movie or show with the + button."
+        case .toWatch: return "Nothing to watch right now. Shows you are caught up on and movies not out yet are under Waiting."
+        case .waiting: return "Shows you are caught up on and movies that are not out yet appear here, with their next date."
         case .watched: return "Movies you watch and shows you finish appear here, along with everything you have reviewed."
         case .stopped: return "Titles you stop watching appear here with their progress kept."
         case .all: return "Your library is empty."
@@ -66,7 +73,7 @@ struct LibraryList: View {
             }
             Divider()
             Button("Remove from Watchlist", role: .destructive) { model.remove(t) }
-        } else {
+        } else if e.note == nil {
             Button("Add to Watchlist") { Task { await model.addFromHistory(e) } }
         }
     }
@@ -75,10 +82,39 @@ struct LibraryList: View {
 struct LibraryRow: View {
     @Environment(AppModel.self) private var model
     let entry: LibraryEntry
+    var showStatus = false
 
     var body: some View {
+        HStack(spacing: 6) {
+            row
+            if showStatus {
+                Text(entry.status.rawValue)
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.quaternary))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var row: some View {
         if let t = model.title(entry.id) {
             TitleRow(title: t, rating: entry.rating)
+        } else if entry.note != nil {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 4).fill(.quaternary)
+                    .overlay(Image(systemName: "doc.text").foregroundStyle(.secondary))
+                    .frame(width: 36, height: 54)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.name).font(.headline).lineLimit(1)
+                    Text("\(entry.mediaType.label), not linked to TMDB").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let r = entry.rating { Text(myLabel(r)).font(.caption).foregroundStyle(.yellow) }
+            }
+            .padding(.vertical, 2)
         } else {
             HStack(spacing: 10) {
                 Poster(url: model.summaries[entry.id]?.posterURL, width: 36)
@@ -204,5 +240,64 @@ struct ReviewCard: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.5)))
+    }
+}
+
+
+// a vault note that is not linked yet
+
+struct UnlinkedNoteView: View {
+    @Environment(AppModel.self) private var model
+    let note: ImportCandidate
+    @State private var linking = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(note.noteName).font(.largeTitle.bold()).textSelection(.enabled)
+                HStack(spacing: 10) {
+                    Text(note.mediaType == .movie ? "Movie note" : "TV note")
+                    StarsLabel(rating: note.rating)
+                    if let d = note.finishedOn { Text(DateText.pretty(d)) }
+                }
+                .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "link.badge.plus").foregroundStyle(.orange)
+                    Text("This note is not linked to a TMDB title, so Watchlist cannot show its poster, add it to your watchlist, or include it in Insights. Link it to fix that; the note only gains a watchlist_id property (and a new name, if you choose one).")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                HStack(spacing: 14) {
+                    Button {
+                        linking = true
+                    } label: {
+                        Label("Link to TMDB...", systemImage: "link")
+                    }
+                    .disabled(!model.hasKey)
+                    if let vault = ObsidianVault.resolve(model.config),
+                       let url = ObsidianVault.openURL(vault: vault, relativePath: note.relativePath) {
+                        Link("Open in Obsidian", destination: url)
+                    }
+                }
+                if !note.body.isEmpty {
+                    Text(note.body)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .sheet(isPresented: $linking) {
+            FixMatchSheet(candidate: note) { picked, renameTo in
+                linking = false
+                if let picked {
+                    Task { _ = await model.linkNote(note, to: picked, renameTo: renameTo) }
+                }
+            }
+        }
     }
 }

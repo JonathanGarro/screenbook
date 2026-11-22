@@ -30,19 +30,26 @@ struct ContentView: View {
                 } else if model.selection == .insights {
                     InsightsTable()
                 } else {
-                    TitleList(items: model.items(for: model.selection ?? .upcoming))
+                    ToWatchList()
                 }
             }
             .navigationSplitViewColumnWidth(min: 300, ideal: 360)
         } detail: {
             if model.selection == .insights {
                 InsightsView()
+            } else if model.selection == .whatsNew && model.selectedTitleID == nil {
+                CalendarView()
             } else if let t = model.title(model.selectedTitleID) {
                 TitleDetailView(title: t)
                     .id(t.id)
             } else if model.selection == .library, let e = model.libraryEntry(model.selectedTitleID) {
-                HistoryDetailView(entry: e)
-                    .id(e.id)
+                if let note = e.note {
+                    UnlinkedNoteView(note: note)
+                        .id(e.id)
+                } else {
+                    HistoryDetailView(entry: e)
+                        .id(e.id)
+                }
             } else {
                 ContentUnavailableView("Nothing Selected", systemImage: "film.stack",
                                        description: Text("Pick a title to see dates, episodes, and where to watch."))
@@ -50,6 +57,14 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup {
+                if model.selection == .whatsNew && model.selectedTitleID != nil {
+                    Button {
+                        model.selectedTitleID = nil
+                    } label: {
+                        Label("Calendar", systemImage: "calendar")
+                    }
+                    .help("Back to the calendar")
+                }
                 if model.isChecking {
                     ProgressView().controlSize(.small)
                 }
@@ -263,8 +278,8 @@ struct WhatsNewList: View {
 
     var body: some View {
         @Bindable var model = model
-        if let r = model.report {
-            List(selection: $model.selectedTitleID) {
+        List(selection: $model.selectedTitleID) {
+            if let r = model.report {
                 Section("Released Since Last Check") {
                     if r.releasedMovies.isEmpty {
                         Text("No new releases").foregroundStyle(.secondary)
@@ -281,31 +296,71 @@ struct WhatsNewList: View {
                         TitleRow(title: current(u.title), detail: u.newlyAired.map(\.code).joined(separator: ", ")).tag(u.title.id)
                     }
                 }
-                let upcoming = model.items(for: .upcoming).filter {
-                    ($0.nextDate(today: model.today) ?? "9") <= DateText.addDays(model.today, 14)
+            } else {
+                Section {
+                    Button("Check Now") { Task { await model.check() } }
+                        .disabled(model.isChecking || model.titles.isEmpty)
+                } footer: {
+                    Text("Run a check to see new releases and episodes.")
                 }
-                if !upcoming.isEmpty {
-                    Section("Next Two Weeks") {
-                        ForEach(upcoming) { t in
-                            TitleRow(title: t).tag(t.id)
+            }
+            Section("Coming Up, Next 30 Days") {
+                if model.calendarEvents.isEmpty {
+                    Text(model.calendarLoading ? "Loading..." : "Nothing scheduled").foregroundStyle(.secondary)
+                }
+                ForEach(model.calendarEvents) { e in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(shortDay(e.date)).font(.caption.bold())
+                            Text(weekday(e.date)).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        .frame(width: 52, alignment: .leading)
+                        Circle().fill(CalendarColors.color(e.mediaType)).frame(width: 8, height: 8)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(e.title).lineLimit(1)
+                            Text(e.episodeName.map { "\(e.label), \($0)" } ?? e.label)
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
+                    .tag(e.titleId)
                 }
             }
-        } else {
-            ContentUnavailableView {
-                Label("No Check Yet", systemImage: "sparkles")
-            } description: {
-                Text("Run a check to see new releases and episodes.")
-            } actions: {
-                Button("Check Now") { Task { await model.check() } }
-                    .disabled(model.isChecking || model.titles.isEmpty)
-            }
         }
+        .task(id: model.titles.count) { await model.loadCalendar() }
     }
 
     /// prefer the live row so badges reflect episodes watched since the check
     private func current(_ t: Title) -> Title {
         model.title(t.id) ?? t
+    }
+}
+
+// to watch, with a type filter
+
+struct ToWatchList: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        let all = model.items(for: .unwatched)
+        let items = all.filter { t in
+            switch model.toWatchType {
+            case .all: return true
+            case .movies: return t.mediaType == .movie
+            case .tv: return t.mediaType == .tv
+            }
+        }
+        VStack(spacing: 0) {
+            Picker("Type", selection: $model.toWatchType) {
+                ForEach(LibraryType.allCases) { type in
+                    let n = type == .all ? all.count : all.filter { (type == .movies) == ($0.mediaType == .movie) }.count
+                    Text("\(type.rawValue) \(n)").tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(10)
+            TitleList(items: items)
+        }
     }
 }

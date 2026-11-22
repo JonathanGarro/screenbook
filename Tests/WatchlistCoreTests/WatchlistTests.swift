@@ -1182,3 +1182,60 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(movie.watchedOn == "2025-03-01")
     }
 }
+
+// calendar
+
+@Suite struct CalendarTests {
+    @Test func monthIncludesEveryEpisodeAndMovieDates() async throws {
+        let mock = MockTransport()
+        mock.on("tv/200", Fixture.tv(last: (2, 1, "2026-11-15"), next: (2, 2, "2026-11-22"), seasons: [(1, 3), (2, 6)]))
+        mock.on("tv/200/season/2", """
+        {"season_number":2,"episodes":[
+          {"air_date":"2026-11-15","episode_number":1,"season_number":2,"name":"One"},
+          {"air_date":"2026-11-22","episode_number":2,"season_number":2,"name":"Two"},
+          {"air_date":"2026-11-29","episode_number":3,"season_number":2,"name":"Three"},
+          {"air_date":"2026-12-06","episode_number":4,"season_number":2,"name":"Four"},
+          {"air_date":"2026-12-27","episode_number":5,"season_number":2,"name":"Five"}]}
+        """)
+        mock.on("movie/100", Fixture.movie(release: "2026-12-05", digital: "2027-02-01"))
+        mock.on("movie/101", Fixture.movie(id: 101, release: "2026-10-01", digital: "2026-12-10"))
+        let service = try makeService(mock, Clock("2026-11-20"))
+        try await service.add(SearchResult(id: 200, mediaType: "tv"))
+        try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        let watched = try await service.add(SearchResult(id: 101, mediaType: "movie"))
+
+        var events = try await service.calendarEvents(days: 30)
+        #expect(events.map(\.label) == ["S02E02", "S02E03", "In theaters", "S02E04", "Digital"])
+        #expect(events.first?.date == "2026-11-22")
+
+        // watched movies and stopped titles drop out
+        try service.setMovieWatched(watched, on: "2026-11-01")
+        try await service.setStopped(200, .tv, stopped: true)
+        events = try await service.calendarEvents(days: 30)
+        #expect(events.map(\.label) == ["In theaters"])
+    }
+}
+
+
+// unlinked notes
+
+@Suite struct UnlinkedNoteTests {
+    @Test func unlinkedNotesAreListedAndCanBeLinked() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("unlinked-vault-\(UUID().uuidString)")
+        for (p, t) in ["Film/Linked.md": "---\nwatchlist_id: movie-1-0\n---\n# Linked\n",
+                       "Film/Loose.md": "---\ntype: Film\nrating: 3\nfinished_on: 2025-01-01\n---\n# Loose\n\nText.\n"] {
+            let u = root.appendingPathComponent(p)
+            try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try t.write(to: u, atomically: true, encoding: .utf8)
+        }
+        var c = AppConfig(); c.obsidianFilmFolder = "Film"; c.obsidianTVFolder = "TV"
+        let service = try makeService(MockTransport(), Clock("2026-02-01"), config: c)
+        let loose = try service.unlinkedNotes(vault: root)
+        #expect(loose.map(\.noteName) == ["Loose"])
+        let id = try await service.linkNote(loose[0], to: SearchResult(id: 77, mediaType: "movie", title: "Loose"), vault: root)
+        #expect(id == "movie-77-0")
+        #expect(try service.unlinkedNotes(vault: root).isEmpty)
+        let review = try service.db.review(tmdbId: 77, mediaType: .movie, season: 0)
+        #expect(review?.rating == 3 && review?.body == "Text.")
+    }
+}
