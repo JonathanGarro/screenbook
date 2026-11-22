@@ -149,6 +149,14 @@ public enum NoteImport {
         )
     }
 
+    /// pulls an imdb id out of an id or an imdb.com link
+    public static func imdbId(in text: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: #"\btt\d{6,10}\b"#),
+              let m = re.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let r = Range(m.range, in: text) else { return nil }
+        return String(text[r])
+    }
+
     /// parses "tv-123-2" into its parts
     public static func parseId(_ id: String) -> (MediaType, Int, Int)? {
         let parts = id.split(separator: "-")
@@ -391,6 +399,16 @@ extension WatchlistService {
         if results.isEmpty, c.yearHint != nil { results = try await client.searchShows(c.searchName) }
         guard let (r, status, via) = pick(results, name: c.searchName, year: c.yearHint, watchedBy: c.finishedOn) else { return (nil, .unmatched) }
         return (ImportMatch(tmdbId: r.id, title: r.displayTitle, year: r.year, via: via), status)
+    }
+
+    /// search for the title picker: an imdb link or id (tt1234567) is looked up exactly, anything else searches by name
+    public func searchForLink(_ text: String) async throws -> [SearchResult] {
+        guard let client else { throw TMDBError.missingAPIKey }
+        if let imdb = NoteImport.imdbId(in: text) {
+            let found = try await client.find(imdbId: imdb)
+            return found.movies + found.shows
+        }
+        return try await client.search(text)
     }
 
     /// notes in the movie and tv folders that do not carry a watchlist_id yet. no network.

@@ -277,7 +277,7 @@ struct FixMatchSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Match \"\(candidate.noteName)\"").font(.headline)
             HStack {
-                TextField("Search TMDB", text: $query).textFieldStyle(.roundedBorder).onSubmit { Task { await search() } }
+                TextField("Search TMDB, or paste an IMDb link or ID", text: $query).textFieldStyle(.roundedBorder).onSubmit { Task { await search() } }
                 Button("Search") { Task { await search() } }
             }
             List(results, selection: $selected) { r in
@@ -335,7 +335,7 @@ struct FixMatchSheet: View {
     private func search() async {
         searching = true
         defer { searching = false }
-        results = (try? await model.search(query)) ?? []
+        results = (try? await model.service?.searchForLink(query)) ?? []
         selected = results.first { $0.kind == candidate.mediaType }?.id ?? results.first?.id
         suggest()
     }

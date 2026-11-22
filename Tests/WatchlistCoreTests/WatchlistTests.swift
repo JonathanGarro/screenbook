@@ -1239,3 +1239,20 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(review?.rating == 3 && review?.body == "Text.")
     }
 }
+
+
+// imdb lookups in the title picker
+
+@Suite struct IMDbLinkTests {
+    @Test func imdbLinksAndIdsAreRecognized() async throws {
+        #expect(NoteImport.imdbId(in: "https://www.imdb.com/title/tt35522483/?ref_=fn_t_1") == "tt35522483")
+        #expect(NoteImport.imdbId(in: "tt0075314") == "tt0075314")
+        #expect(NoteImport.imdbId(in: "Nirvana the Band") == nil)
+        let mock = MockTransport()
+        mock.on("find/tt35522483", #"{"movie_results":[{"id":1154538,"title":"Nirvanna the Band the Show the Movie","release_date":"2026-02-02"}],"tv_results":[]}"#)
+        let service = try makeService(mock, Clock("2026-11-22"))
+        let results = try await service.searchForLink("https://www.imdb.com/title/tt35522483/")
+        #expect(results.map(\.id) == [1154538])
+        #expect(results.first?.kind == .movie)
+    }
+}

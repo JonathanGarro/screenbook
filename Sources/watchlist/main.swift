@@ -20,6 +20,7 @@ commands:
                                                link existing obsidian review notes (dry run unless --apply)
   fill-ratings [--apply] [--refresh]           fill imdb, metascore, rotten tomatoes in linked movie notes (dry run unless --apply)
   sync-reviews                                 pull obsidian edits into watchlist's reviews
+  link "<note name>" <imdb link or id>         link an unlinked note to a title by its imdb id
   audit-series [--apply] [--keys-only] [--skip "Note A,Note B"]
                                                add film_series_index to notes and fill it from tmdb collections
   digest [--force]                             write outputs/digest.md and print it
@@ -299,6 +300,16 @@ do {
         } else {
             print("Dry run. Nothing was written. Run with --apply to add the keys and fill the blanks.")
         }
+
+    case "link":
+        guard args.count == 2 else { fail("usage: watchlist link \"<note name>\" <imdb link or id>") }
+        let notes = try service.unlinkedNotes().filter { $0.noteName.caseInsensitiveCompare(args[0]) == .orderedSame }
+        guard let note = notes.first else { fail("No unlinked note named \"\(args[0])\".") }
+        guard NoteImport.imdbId(in: args[1]) != nil else { fail("Give an IMDb link or id like tt1234567.") }
+        let found = try await service.searchForLink(args[1])
+        guard let title = found.first else { fail("TMDB has nothing for that IMDb id.") }
+        let id = try await service.linkNote(note, to: title)
+        print("Linked \(note.noteName) to \(title.displayTitle) (\(title.year.map(String.init) ?? "?")) as \(id).")
 
     case "sync-reviews":
         let s = try service.syncReviewsFromObsidian()
