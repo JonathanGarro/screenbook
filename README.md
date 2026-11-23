@@ -2,7 +2,7 @@
 
 A Mac app for everything you watch. It tracks movies and TV shows you care about (release dates for your region, new episodes, a 30-day calendar, what you can watch now), keeps a library of everything you have seen, and lets you write reviews that live in your Obsidian vault as plain markdown notes. It is a native SwiftUI app with a small command line tool. Everything stays on your Mac in one SQLite file and your vault.
 
-**Website:** https://jonathangarro.github.io/screenbook/ · **Download:** [Screenbook.dmg](https://github.com/JonathanGarro/screenbook/releases/latest/download/Screenbook.dmg) (signed and notarized, updates itself)
+**Website:** https://screenbook.app · **Download:** [Screenbook.dmg](https://github.com/JonathanGarro/screenbook/releases/latest/download/Screenbook.dmg) (signed and notarized, updates itself)
 
 No accounts and no analytics. Bring your own free TMDB key.
 
