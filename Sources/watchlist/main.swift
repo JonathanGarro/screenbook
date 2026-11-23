@@ -20,6 +20,7 @@ commands:
                                                link existing obsidian review notes (dry run unless --apply)
   fill-ratings [--apply] [--refresh]           fill imdb, metascore, rotten tomatoes in linked movie notes (dry run unless --apply)
   sync-reviews                                 pull obsidian edits into watchlist's reviews
+  tidy [--apply]                               give every note the standard properties in the standard order (dry run unless --apply)
   link "<note name>" <imdb link or id>         link an unlinked note to a title by its imdb id
   audit-series [--apply] [--keys-only] [--skip "Note A,Note B"]
                                                add film_series_index to notes and fill it from tmdb collections
@@ -310,6 +311,29 @@ do {
         guard let title = found.first else { fail("TMDB has nothing for that IMDb id.") }
         let id = try await service.linkNote(note, to: title)
         print("Linked \(note.noteName) to \(title.displayTitle) (\(title.year.map(String.init) ?? "?")) as \(id).")
+
+    case "tidy":
+        let apply = takeFlag(&args, "--apply")
+        let s = try service.tidyVault(dryRun: !apply)
+        print("\(apply ? "Tidied" : "Would tidy") \(s.changed.count) of \(s.checked) notes. Reordered: \(s.reordered).")
+        if !s.addedKeys.isEmpty {
+            print("Blank properties added: " + s.addedKeys.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
+        }
+        if !apply {
+            for sample in s.samples {
+                func front(_ t: String) -> String { ObsidianNote.parse(t).properties.flatMap(\.lines).joined(separator: "\n") }
+                print("")
+                print("== \(sample.path)")
+                print("-- before")
+                print(front(sample.before))
+                print("-- after")
+                print(front(sample.after))
+            }
+            print("")
+            print("Dry run. Nothing was written. Run with --apply (backs up the folders first).")
+        } else if let b = s.backup {
+            print("Backup: \(b.path)")
+        }
 
     case "sync-reviews":
         let s = try service.syncReviewsFromObsidian()

@@ -11,9 +11,17 @@ struct ContentView: View {
         @Bindable var model = model
         NavigationSplitView {
             List(SidebarItem.allCases, selection: $model.selection) { item in
-                Label(item.label, systemImage: item.symbol)
-                    .badge(model.count(for: item) ?? 0)
-                    .tag(item)
+                Label {
+                    Text(item.label)
+                } icon: {
+                    Image(systemName: item.symbol)
+                        .frame(width: 20)
+                        .padding(.trailing, 6)
+                }
+                .font(.system(size: 14))
+                .padding(.vertical, 4)
+                .badge(model.count(for: item) ?? 0)
+                .tag(item)
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
             .safeAreaInset(edge: .bottom) { StatusFooter() }

@@ -556,6 +556,8 @@ extension WatchlistService {
             do {
                 if c.existingId == nil {
                     try ObsidianNote.stampId(id, into: vault.appendingPathComponent(c.relativePath))
+                    // linked notes get the full standard property set in the standard order
+                    try ObsidianNote.tidyFile(vault.appendingPathComponent(c.relativePath), type: type)
                     summary.stamped += 1
                 }
                 if try db.review(tmdbId: tmdb, mediaType: type, season: season) == nil {
@@ -571,6 +573,12 @@ extension WatchlistService {
             } catch {
                 summary.errors.append("\(c.noteName): \(error.localizedDescription)")
             }
+        }
+
+        // newly linked movies get their imdb and rotten tomatoes values right away when an omdb key is set
+        let linkedMovies = Set(chosen.compactMap(\.reviewId).filter { $0.hasPrefix("movie-") })
+        if !linkedMovies.isEmpty, omdbClient != nil {
+            _ = try? await fillRatings(only: linkedMovies, vault: vault)
         }
 
         guard addRunningShows, client != nil else { return summary }

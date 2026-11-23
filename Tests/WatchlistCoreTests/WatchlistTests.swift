@@ -639,7 +639,7 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(throws: ReviewError.noteNotFound) { _ = try service.openURL(for: r, vault: vault) }
         let linked = try service.relinkNote(r, file: note, vault: vault)
         #expect(linked.exportPath == "Culture/Television/Sample Show.md")
-        #expect(try String(contentsOf: note, encoding: .utf8) == "---\ntype: Television\nrating: 3\nwatchlist_id: tv-4242-1\n---\n# Sample Show\n\nBody.\n")
+        #expect(try String(contentsOf: note, encoding: .utf8) == (ObsidianNote.tidy("---\ntype: Television\nrating: 3\nwatchlist_id: tv-4242-1\n---\n# Sample Show\n\nBody.\n", type: .tv) ?? ""))
         #expect(try service.openURL(for: linked, vault: vault).review.exportPath == "Culture/Television/Sample Show.md")
     }
 
@@ -746,7 +746,7 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(summary.backup.map { FileManager.default.fileExists(atPath: $0.path) } == true)
 
         let taxi = try String(contentsOf: root.appendingPathComponent("Culture/Film/Taxi Driver.md"), encoding: .utf8)
-        #expect(taxi == "---\ntype: Film\nrating: 5\nfinished_on: 2024-01-01\nimdb_id: tt0075314\nwatchlist_id: movie-103-0\n---\n# Taxi Driver\n\nClassic.\n")
+        #expect(taxi == (ObsidianNote.tidy("---\ntype: Film\nrating: 5\nfinished_on: 2024-01-01\nimdb_id: tt0075314\nwatchlist_id: movie-103-0\n---\n# Taxi Driver\n\nClassic.\n", type: .movie) ?? ""))
         let untouched = try String(contentsOf: root.appendingPathComponent("Culture/Television/Test Show - Season 5.md"), encoding: .utf8)
         #expect(!untouched.contains("watchlist_id"))
 
@@ -858,7 +858,7 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         let summary = try await service.applyImport(matched, addRunningShows: false, vault: root)
         let renamedURL = root.appendingPathComponent("Culture/Film/Borat Subsequent Moviefilm.md")
         #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("Culture/Film/Borat 2.md").path))
-        #expect(try String(contentsOf: renamedURL, encoding: .utf8) == "---\ntype: Film\nrating: 3.5\nfinished_on: 2020-10-30\nwatchlist_id: movie-574451-0\n---\n# Borat Subsequent Moviefilm\n\nVery nice.\n")
+        #expect(try String(contentsOf: renamedURL, encoding: .utf8) == (ObsidianNote.tidy("---\ntype: Film\nrating: 3.5\nfinished_on: 2020-10-30\nwatchlist_id: movie-574451-0\n---\n# Borat Subsequent Moviefilm\n\nVery nice.\n", type: .movie) ?? ""))
         #expect(try String(contentsOf: root.appendingPathComponent("Journal/2020-10-30.md"), encoding: .utf8)
                 == "Watched [[Borat Subsequent Moviefilm]] tonight. Also [[Borat Subsequent Moviefilm|the sequel]].\n")
         #expect(summary.linksUpdated == 2)
@@ -920,7 +920,7 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(s.updated == ["Blank"])
         #expect(s.alreadyComplete == 1)
         let blank = try String(contentsOf: root.appendingPathComponent("Film/Blank.md"), encoding: .utf8)
-        #expect(blank == "---\ntype: Film\nrating: 3\nimdb_id: tt1\nimdb_rating: '7.2'\nrotten_tomatoes: 85%\nmy_rating_delta: -25\nwatchlist_id: movie-100-0\nimdb_link: https://www.imdb.com/title/tt1/\nimdb_votes: 1,234\n---\n# Blank\n\nText.\n")
+        #expect(blank == (ObsidianNote.tidy("---\ntype: Film\nrating: 3\nimdb_id: tt1\nimdb_rating: '7.2'\nrotten_tomatoes: 85%\nmy_rating_delta: -25\nwatchlist_id: movie-100-0\nimdb_link: https://www.imdb.com/title/tt1/\nimdb_votes: 1,234\n---\n# Blank\n\nText.\n", type: .movie) ?? ""))
         let done = try String(contentsOf: root.appendingPathComponent("Film/Done.md"), encoding: .utf8)
         #expect(done == notes["Film/Done.md"])
     }
@@ -1254,5 +1254,39 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         let results = try await service.searchForLink("https://www.imdb.com/title/tt35522483/")
         #expect(results.map(\.id) == [1154538])
         #expect(results.first?.kind == .movie)
+    }
+}
+
+
+// tidy properties
+
+@Suite struct TidyTests {
+    @Test func tidyAddsMissingAndReordersWithoutTouchingValues() {
+        let old = "---\nconnected_to: '[[Knives Out]]'\nfilm_series_index: 2\nfinished_on: 2022-12-24\nimdb_id: tt11564570\nrating: 4\nstars: \"\\u2605\\u2605\\u2605\\u2605\"\ntags:\n  - mystery\ntype: Film\nwatchlist_id: movie-661374-0\n---\n# Glass Onion\n\nText.\n"
+        let out = ObsidianNote.tidy(old, type: .movie)!
+        #expect(out == "---\ntype: Film\nrating: 4\nstars: \"\\u2605\\u2605\\u2605\\u2605\"\nfinished_on: 2022-12-24\nconnected_to: '[[Knives Out]]'\nfilm_series_index: 2\nrewatch: false\nimdb_id: tt11564570\nimdb_link:\nimdb_rating:\nimdb_votes:\nmetascore:\nrotten_tomatoes:\nmy_rating_delta:\ntags:\n  - mystery\nwatchlist_id: movie-661374-0\n---\n# Glass Onion\n\nText.\n")
+        #expect(ObsidianNote.tidy(out, type: .movie) == nil)
+    }
+
+    @Test func tvNotesGetTheShorterSetAndNoBlankId() {
+        let tv = "---\ntype: Television\nrating: 4\nstars: ★★★★\nfinished_on: 2025-03-01\nconnected_to:\nfilm_series_index:\n---\n# Show - Season 1\n"
+        #expect(ObsidianNote.tidy(tv, type: .tv) == "---\ntype: Television\nrating: 4\nstars: ★★★★\nfinished_on: 2025-03-01\nconnected_to:\nfilm_series_index:\nrewatch: false\n---\n# Show - Season 1\n")
+    }
+
+    @Test func fillRatingsWritesInStandardOrder() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("tidy-fill-\(UUID().uuidString)")
+        let u = root.appendingPathComponent("Film/New.md")
+        try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "---\ntype: Film\nrating: 3\nstars: ★★★\nfinished_on: 2026-01-01\nconnected_to:\nfilm_series_index:\nrewatch: false\nwatchlist_id: movie-100-0\n---\n# New\n".write(to: u, atomically: true, encoding: .utf8)
+        let mock = MockTransport()
+        mock.on("movie/100", Fixture.movie(release: "2025-01-01").replacingOccurrences(of: "\"poster_path\":\"/p.jpg\",", with: "\"poster_path\":\"/p.jpg\",\"imdb_id\":\"tt1\","))
+        var c = AppConfig(); c.obsidianFilmFolder = "Film"
+        let service = try makeService(mock, Clock("2026-02-01"), config: c)
+        try service.saveReview(Review(tmdbId: 100, mediaType: .movie, noteTitle: "New", exportedAt: "2026-01-01T00:00:00Z", exportPath: "Film/New.md"))
+        let omdbT = MockTransport()
+        omdbT.routes["/"] = [(200, #"{"Response":"True","imdbRating":"7.0","imdbVotes":"10","Metascore":"60","Ratings":[]}"#)]
+        _ = try await service.fillRatings(omdb: OMDbClient(apiKey: "k", db: service.db, transport: omdbT), vault: root)
+        let keys = ObsidianNote.parse(try String(contentsOf: u, encoding: .utf8)).properties.map(\.key)
+        #expect(keys == ObsidianNote.standardKeys(.movie))
     }
 }

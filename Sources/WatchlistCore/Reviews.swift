@@ -435,12 +435,13 @@ extension WatchlistService {
 
     /// fills imdb, metascore, rotten tomatoes, and my_rating_delta in linked movie notes.
     /// only blank or missing properties are written unless refresh is true. dryRun reports without writing.
-    public func fillRatings(refresh: Bool = false, dryRun: Bool = false, omdb explicitOMDb: OMDbClient? = nil,
-                            vault explicit: URL? = nil, progress: ((Int, Int) -> Void)? = nil) async throws -> RatingsFillSummary {
+    public func fillRatings(refresh: Bool = false, dryRun: Bool = false, only ids: Set<String>? = nil,
+                            omdb explicitOMDb: OMDbClient? = nil, vault explicit: URL? = nil,
+                            progress: ((Int, Int) -> Void)? = nil) async throws -> RatingsFillSummary {
         guard let omdb = explicitOMDb ?? omdbClient else { throw RatingsError.noOMDbKey }
         let vault = try vaultURL(explicit)
         var summary = RatingsFillSummary()
-        let movies = try db.allReviews().filter { $0.mediaType == .movie && $0.isSent }
+        let movies = try db.allReviews().filter { $0.mediaType == .movie && $0.isSent && (ids == nil || ids!.contains($0.id)) }
         let needed = ["imdb_id", "imdb_rating", "imdb_votes", "metascore", "rotten_tomatoes", "my_rating_delta"]
 
         for (i, r) in movies.enumerated() {
@@ -474,6 +475,8 @@ extension WatchlistService {
                 out = second.0
                 changed += second.1
                 if changed.isEmpty { summary.alreadyComplete += 1; continue }
+                // new properties land in the standard order, not at the end
+                out = ObsidianNote.tidy(out, type: .movie) ?? out
                 if !dryRun { try out.write(to: url, atomically: true, encoding: .utf8) }
                 summary.updated.append(r.noteTitle)
             } catch {
@@ -580,6 +583,7 @@ extension WatchlistService {
         let vault = try vaultURL(explicit)
         guard let path = ObsidianNote.relative(file, to: vault) else { throw ReviewError.outsideVault }
         try ObsidianNote.stampId(r.id, into: file)
+        try ObsidianNote.tidyFile(file, type: r.mediaType)
         var updated = r
         updated.exportPath = path
         updated.noteTitle = (path as NSString).lastPathComponent.replacingOccurrences(of: ".md", with: "")

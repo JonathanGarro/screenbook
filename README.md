@@ -109,6 +109,15 @@ The note is the master copy. Watchlist syncs on launch, whenever you switch back
 - A review whose note was deleted is marked **Note missing**, with **Locate Note...** and **Remove from Watchlist**. Nothing is deleted automatically.
 - Renames and moves are followed through `watchlist_id`.
 
+### Consistent properties
+
+Every review note uses the same properties in the same order, matching the template:
+
+- Film: `type, rating, stars, finished_on, connected_to, film_series_index, rewatch, imdb_id, imdb_link, imdb_rating, imdb_votes, metascore, rotten_tomatoes, my_rating_delta`, then any other properties, then `watchlist_id` last.
+- TV: the same through `rewatch`, then any other properties, then `watchlist_id`.
+
+Watchlist writes notes this way when it sends or updates a review, links a note (import, Link to TMDB, Locate Note), or fills ratings; linking a movie also fills its IMDb and Rotten Tomatoes values right away. A note's type comes from its `watchlist_id` when linked, else from its folder. `watchlist tidy` (a dry run unless `--apply`, which backs up the folders first) brings every existing note in line: it adds missing properties (blank, or `rewatch: false`) and reorders, without changing any value.
+
 ### Series index
 
 `film_series_index` is a film's place in its franchise by release order (Dune - Part Two is 2). New movie drafts get it pre-filled from the film's TMDB collection; change it in the editor for franchises you number your own way.
@@ -161,6 +170,7 @@ watchlist available <tmdb_id> on|off
 watchlist import-reviews [--apply] [--include-check] [--add-shows on|off]
 watchlist fill-ratings [--apply] [--refresh]
 watchlist sync-reviews
+watchlist tidy [--apply]
 watchlist link "<note name>" <imdb link or id>
 watchlist audit-series [--apply] [--keys-only] [--skip "Note A,Note B"]
 watchlist digest [--force]
@@ -343,6 +353,7 @@ Sources/WatchlistCore/        shared logic
   Sync.swift                  pulling obsidian edits back into reviews
   Series.swift                series index from tmdb collections
   Insights.swift              data for the ratings comparison chart
+  Tidy.swift                  standard note properties and order
 Sources/WatchlistApp/         swiftui app
 Sources/watchlist/main.swift  cli
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)
