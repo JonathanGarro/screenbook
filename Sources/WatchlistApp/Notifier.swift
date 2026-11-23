@@ -74,7 +74,7 @@ enum Notifier {
 
     static func sendTest() async {
         guard available, await requestAuthorization() else { return }
-        await send(id: "test-\(Date().timeIntervalSince1970)", title: "Watchlist",
+        await send(id: "test-\(Date().timeIntervalSince1970)", title: "Screenbook",
                    body: "Notifications are working. You will hear about new episodes and movie releases.", titleID: nil)
     }
 

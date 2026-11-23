@@ -263,7 +263,7 @@ struct UnlinkedNoteView: View {
                 .foregroundStyle(.secondary)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "link.badge.plus").foregroundStyle(.orange)
-                    Text("This note is not linked to a TMDB title, so Watchlist cannot show its poster, add it to your watchlist, or include it in Insights. Link it to fix that; the note only gains a watchlist_id property (and a new name, if you choose one).")
+                    Text("This note is not linked to a TMDB title, so Screenbook cannot show its poster, add it to your watchlist, or include it in Insights. Link it to fix that; the note only gains a watchlist_id property (and a new name, if you choose one).")
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
                 }

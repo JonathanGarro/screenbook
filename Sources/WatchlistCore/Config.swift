@@ -17,17 +17,25 @@ public struct AppPaths: Sendable {
     public var configURL: URL { dataDir.appendingPathComponent("config.json") }
     public var envURL: URL { dataDir.appendingPathComponent(".env") }
 
-    /// default is ~/Library/Application Support/Watchlist, overridable with WATCHLIST_DATA_DIR.
+    /// default is ~/Library/Application Support/Screenbook, overridable with SCREENBOOK_DATA_DIR.
+    /// the folder from when the app was called watchlist is moved over the first time.
     public static func standard(override: String? = nil) -> AppPaths {
         if let override, !override.isEmpty {
             return AppPaths(dataDir: URL(fileURLWithPath: (override as NSString).expandingTildeInPath))
         }
-        if let env = ProcessInfo.processInfo.environment["WATCHLIST_DATA_DIR"], !env.isEmpty {
-            return AppPaths(dataDir: URL(fileURLWithPath: (env as NSString).expandingTildeInPath))
+        let env = ProcessInfo.processInfo.environment
+        if let dir = env["SCREENBOOK_DATA_DIR"] ?? env["WATCHLIST_DATA_DIR"], !dir.isEmpty {
+            return AppPaths(dataDir: URL(fileURLWithPath: (dir as NSString).expandingTildeInPath))
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return AppPaths(dataDir: support.appendingPathComponent("Watchlist"))
+        let current = support.appendingPathComponent("Screenbook")
+        let previous = support.appendingPathComponent("Watchlist")
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: current.path), fm.fileExists(atPath: previous.path) {
+            try? fm.moveItem(at: previous, to: current)
+        }
+        return AppPaths(dataDir: current)
     }
 
     public func ensureDirectories() throws {

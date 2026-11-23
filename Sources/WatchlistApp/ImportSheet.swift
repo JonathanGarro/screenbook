@@ -50,7 +50,7 @@ struct ImportSheet: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Watchlist reads every note in your movie and TV folders, matches each one to TMDB, and shows you the matches before changing anything.")
+            Text("Screenbook reads every note in your movie and TV folders, matches each one to TMDB, and shows you the matches before changing anything.")
             VStack(alignment: .leading, spacing: 6) {
                 Label("Movie folder: \(model.config.obsidianFilmFolder)", systemImage: "film")
                 Label("TV folder: \(model.config.obsidianTVFolder)", systemImage: "tv")

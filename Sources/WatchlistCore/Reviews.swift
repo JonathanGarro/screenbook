@@ -401,7 +401,7 @@ public enum ReviewError: Error, LocalizedError, Equatable {
             return "That file is not inside the Obsidian vault."
         case .noteExists(let path, let edited):
             return edited
-                ? "\(path) was edited in Obsidian after Watchlist sent it."
+                ? "\(path) was edited in Obsidian after Screenbook sent it."
                 : "A note already exists at \(path)."
         }
     }

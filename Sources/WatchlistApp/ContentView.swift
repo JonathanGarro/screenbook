@@ -152,7 +152,7 @@ struct NoKeyView: View {
         ContentUnavailableView {
             Label("Add Your TMDB Key", systemImage: "key")
         } description: {
-            Text("Watchlist needs a free TMDB API key or read access token. Get one at themoviedb.org under Settings, API, then paste it in Settings here.")
+            Text("Screenbook needs a free TMDB API key or read access token. Get one at themoviedb.org under Settings, API, then paste it in Settings here.")
         } actions: {
             SettingsLink {
                 Text("Open Settings")

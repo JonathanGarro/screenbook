@@ -4,7 +4,7 @@ import WatchlistCore
 // usage
 
 let usage = """
-usage: watchlist [--data-dir PATH] <command> [options]
+usage: screenbook [--data-dir PATH] <command> [options]
 
 commands:
   add <search term> [--caught-up] [--pick N]   search tmdb, pick a match, save it
@@ -113,7 +113,7 @@ func listTable(_ service: WatchlistService) throws -> String {
         }
         return [String(t.tmdbId), t.mediaType.label, t.title, t.year.map(String.init) ?? "", next, note]
     }
-    if rows.isEmpty { return "Watchlist is empty. Add something with: watchlist add <search term>" }
+    if rows.isEmpty { return "Your watchlist is empty. Add something with: screenbook add <search term>" }
     let sorted = rows.sorted { a, b in
         switch (a[4].isEmpty, b[4].isEmpty) {
         case (false, true): return true
@@ -143,7 +143,7 @@ do {
         let caughtUp = takeFlag(&args, "--caught-up")
         let pick = takeOption(&args, "--pick").map { int($0, "--pick") }
         let term = args.joined(separator: " ")
-        if term.isEmpty { fail("usage: watchlist add <search term>") }
+        if term.isEmpty { fail("usage: screenbook add <search term>") }
         let results = Array(try await service.search(term).prefix(10))
         if results.isEmpty { fail("No movies or shows found for '\(term)'.") }
         var choice = pick
@@ -173,7 +173,7 @@ do {
 
     case "remove":
         let type = mediaFilter(&args)
-        guard let first = args.first else { fail("usage: watchlist remove <tmdb_id>") }
+        guard let first = args.first else { fail("usage: screenbook remove <tmdb_id>") }
         let t = try service.remove(int(first, "tmdb_id"), type)
         print("Removed \(t.title) [\(t.mediaType.label)].")
 
@@ -189,13 +189,13 @@ do {
         let unwatch = takeFlag(&args, "--unwatch")
         if let i = args.firstIndex(of: "--all-up-to") {
             args.remove(at: i)
-            guard args.count == 3 else { fail("usage: watchlist watch <tmdb_id> --all-up-to <season> <episode>") }
+            guard args.count == 3 else { fail("usage: screenbook watch <tmdb_id> --all-up-to <season> <episode>") }
             let id = int(args[0], "tmdb_id")
             let count = try await service.markAllUpTo(id, season: int(args[1], "season"), episode: int(args[2], "episode"))
             let t = try service.resolve(id, .tv)
             print("Marked \(count) episodes of \(t.title) watched, up to \(EpisodeRef(season: int(args[1], "season"), episode: int(args[2], "episode")).code).")
         } else {
-            guard args.count == 3 else { fail("usage: watchlist watch <tmdb_id> <season> <episode>") }
+            guard args.count == 3 else { fail("usage: screenbook watch <tmdb_id> <season> <episode>") }
             let id = int(args[0], "tmdb_id")
             let ref = EpisodeRef(season: int(args[1], "season"), episode: int(args[2], "episode"))
             try service.setWatched(id, season: ref.season, episode: ref.episode, watched: !unwatch)
@@ -205,12 +205,12 @@ do {
 
     case "stop", "resume":
         let type = mediaFilter(&args)
-        guard let first = args.first else { fail("usage: watchlist \(command) <tmdb_id>") }
+        guard let first = args.first else { fail("usage: screenbook \(command) <tmdb_id>") }
         let t = try await service.setStopped(int(first, "tmdb_id"), type, stopped: command == "stop")
         print(command == "stop" ? "Stopped \(t.title). Progress is kept; resume any time." : "Resumed \(t.title).")
 
     case "available":
-        guard args.count == 2 else { fail("usage: watchlist available <tmdb_id> on|off") }
+        guard args.count == 2 else { fail("usage: screenbook available <tmdb_id> on|off") }
         let t = try service.resolve(int(args[0], "tmdb_id"), .tv)
         try service.setAllAvailable(t, onOff(args[1]))
         let updated = try service.resolve(t.tmdbId, .tv)
@@ -303,7 +303,7 @@ do {
         }
 
     case "link":
-        guard args.count == 2 else { fail("usage: watchlist link \"<note name>\" <imdb link or id>") }
+        guard args.count == 2 else { fail("usage: screenbook link \"<note name>\" <imdb link or id>") }
         let notes = try service.unlinkedNotes().filter { $0.noteName.caseInsensitiveCompare(args[0]) == .orderedSame }
         guard let note = notes.first else { fail("No unlinked note named \"\(args[0])\".") }
         guard NoteImport.imdbId(in: args[1]) != nil else { fail("Give an IMDb link or id like tt1234567.") }

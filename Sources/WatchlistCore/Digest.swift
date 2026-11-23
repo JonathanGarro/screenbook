@@ -52,7 +52,7 @@ public enum Digest {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm"
         var out: [String] = []
-        out.append("# Watchlist digest")
+        out.append("# Screenbook digest")
         out.append("")
         var meta = "Checked \(f.string(from: r.checkedAt)), region \(r.region)."
         if let prev = r.previousCheck { meta += " Previous check \(f.string(from: prev))." }

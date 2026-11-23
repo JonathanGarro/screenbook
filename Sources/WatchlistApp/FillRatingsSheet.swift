@@ -15,7 +15,7 @@ struct FillRatingsSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Fill IMDb and Rotten Tomatoes").font(.title2.bold())
-            Text("For each movie review linked to a note, Watchlist looks the film up on OMDb by its IMDb id and fills imdb_id, imdb_link, imdb_rating, imdb_votes, metascore, rotten_tomatoes, and my_rating_delta where they are blank or missing. Nothing else in the note changes.")
+            Text("For each movie review linked to a note, Screenbook looks the film up on OMDb by its IMDb id and fills imdb_id, imdb_link, imdb_rating, imdb_votes, metascore, rotten_tomatoes, and my_rating_delta where they are blank or missing. Nothing else in the note changes.")
                 .fixedSize(horizontal: false, vertical: true)
             Toggle("Also refresh values that are already filled (scores change over time)", isOn: $refresh)
                 .disabled(running)

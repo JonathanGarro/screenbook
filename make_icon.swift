@@ -1,12 +1,15 @@
-// draws the app icon and writes a .iconset folder; build_app.sh turns it into AppIcon.icns
-// usage: swift make_icon.swift build/AppIcon.iconset
+// draws the app icon. build_app.sh uses both forms:
+//   swift make_icon.swift build/AppIcon.iconset          rounded icon for older macos, turned into AppIcon.icns
+//   swift make_icon.swift --full-bleed build/icon.png    edge to edge art that macos 26 masks to its own shape
 
 import AppKit
 import CoreGraphics
 
 // config
 
-let outDir = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "build/AppIcon.iconset"
+let args = CommandLine.arguments.dropFirst().filter { $0 != "--full-bleed" }
+let fullBleed = CommandLine.arguments.contains("--full-bleed")
+let outDir = args.first ?? (fullBleed ? "build/icon.png" : "build/AppIcon.iconset")
 let canvas: CGFloat = 1024
 
 func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
@@ -19,17 +22,21 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
 func drawIcon(_ ctx: CGContext) {
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    // macos icon grid: 824pt body centered on a 1024 canvas
-    let body = CGRect(x: 100, y: 100, width: 824, height: 824)
-    let bodyPath = CGPath(roundedRect: body, cornerWidth: 186, cornerHeight: 186, transform: nil)
+    // macos icon grid: 824pt body centered on a 1024 canvas, or the whole canvas for macos 26,
+    // which masks the art to its own shape and adds its own shadow
+    let body = fullBleed ? CGRect(x: 0, y: 0, width: canvas, height: canvas) : CGRect(x: 100, y: 100, width: 824, height: 824)
+    let bodyPath = fullBleed ? CGPath(rect: body, transform: nil)
+        : CGPath(roundedRect: body, cornerWidth: 186, cornerHeight: 186, transform: nil)
 
     // drop shadow under the body
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.35))
-    ctx.addPath(bodyPath)
-    ctx.setFillColor(color(0x241a52))
-    ctx.fillPath()
-    ctx.restoreGState()
+    if !fullBleed {
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: color(0x000000, 0.35))
+        ctx.addPath(bodyPath)
+        ctx.setFillColor(color(0x241a52))
+        ctx.fillPath()
+        ctx.restoreGState()
+    }
 
     // background gradient
     ctx.saveGState()
@@ -37,13 +44,20 @@ func drawIcon(_ ctx: CGContext) {
     ctx.clip()
     let bg = CGGradient(colorsSpace: space, colors: [color(0x3a2a86), color(0x1d6f8c), color(0x22a39a)] as CFArray,
                         locations: [0, 0.6, 1])!
-    ctx.drawLinearGradient(bg, start: CGPoint(x: 200, y: 924), end: CGPoint(x: 824, y: 100), options: [])
+    ctx.drawLinearGradient(bg, start: CGPoint(x: body.minX + 100, y: body.maxY), end: CGPoint(x: body.maxX - 100, y: body.minY), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
 
     // soft highlight in the upper left
     let glow = CGGradient(colorsSpace: space, colors: [color(0xffffff, 0.18), color(0xffffff, 0)] as CFArray, locations: [0, 1])!
     ctx.drawRadialGradient(glow, startCenter: CGPoint(x: 330, y: 800), startRadius: 0,
                            endCenter: CGPoint(x: 330, y: 800), endRadius: 520, options: [])
     ctx.restoreGState()
+
+    // edge to edge art has more room, so the drawing grows to fill it
+    if fullBleed {
+        ctx.translateBy(x: 512, y: 512)
+        ctx.scaleBy(x: 1.14, y: 1.14)
+        ctx.translateBy(x: -512, y: -512)
+    }
 
     // screen with a stand
     let screen = CGRect(x: 222, y: 352, width: 580, height: 400)
@@ -120,6 +134,12 @@ func render(size: Int) -> Data {
 
 // main
 
+if fullBleed {
+    try FileManager.default.createDirectory(at: URL(fileURLWithPath: outDir).deletingLastPathComponent(), withIntermediateDirectories: true)
+    try render(size: 1024).write(to: URL(fileURLWithPath: outDir))
+    print("Wrote \(outDir)")
+    exit(0)
+}
 try FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
 for base in [16, 32, 128, 256, 512] {
     try render(size: base).write(to: URL(fileURLWithPath: "\(outDir)/icon_\(base)x\(base).png"))

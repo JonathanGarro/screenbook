@@ -43,18 +43,22 @@ struct WatchlistApp: App {
     @State private var model = AppModel.shared
 
     var body: some Scene {
-        Window("Watchlist", id: "main") {
+        Window("Screenbook", id: "main") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 900, minHeight: 560)
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") { model.updates.check() }
+                    .disabled(!model.updates.available)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Add Title...") { model.showingAdd = true }
                     .keyboardShortcut("n")
                     .disabled(!model.hasKey)
             }
-            CommandMenu("Watchlist") {
+            CommandMenu("Tools") {
                 Button("Check Now") { Task { await model.check() } }
                     .keyboardShortcut("r")
                     .disabled(!model.hasKey || model.isChecking)
@@ -110,7 +114,7 @@ struct MenuBarLabel: View {
                 Text("\(count)").monospacedDigit()
             }
         }
-        .help(count > 0 ? "\(count) unwatched episodes" : "Watchlist")
+        .help(count > 0 ? "\(count) unwatched episodes" : "Screenbook")
         .onAppear { AppModel.shared.openWindowAction = openWindow }
     }
 }
@@ -142,9 +146,9 @@ struct MenuBarContent: View {
             Task { await model.check() }
         }
         .disabled(!model.hasKey || model.isChecking)
-        Button("Open Watchlist") { openMain() }
+        Button("Open Screenbook") { openMain() }
         Divider()
-        Button("Quit Watchlist") { NSApp.terminate(nil) }
+        Button("Quit Screenbook") { NSApp.terminate(nil) }
     }
 
     private func show(_ t: Title) {

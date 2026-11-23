@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screenbook – Everything you watch, in one book</title>
+  <meta name="description" content="Screenbook tracks the movies and shows you care about, keeps a library of everything you have seen, and keeps your reviews in Obsidian. A native Mac app. Free and open source.">
+  <meta property="og:title" content="Screenbook">
+  <meta property="og:description" content="Everything you watch, in one book. A native Mac app.">
+  <meta property="og:image" content="https://jonathangarro.github.io/screenbook/icon.png">
+  <meta property="og:url" content="https://jonathangarro.github.io/screenbook/">
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="favicon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#top"><img src="icon.png" alt="" width="28" height="28"> Screenbook <span class="beta">Beta</span></a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#obsidian">Obsidian</a>
+    <a href="#free">Free</a>
+    <a href="#start">Download</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- hero -->
+  <section class="hero">
+    <img class="hero-icon" src="icon.png" alt="Screenbook app icon" width="128" height="128">
+    <p class="beta-note"><span class="beta">Beta</span> Early days, so expect rough edges. <a href="https://github.com/JonathanGarro/screenbook/issues/new">Report anything that breaks</a>.</p>
+    <h1>Everything you watch,<br>in one book.</h1>
+    <p class="lede">Screenbook tracks what&rsquo;s coming, remembers what you&rsquo;ve seen, and keeps your reviews in Obsidian. A native Mac app.</p>
+    <div class="cta">
+      <a class="pill" href="https://github.com/JonathanGarro/screenbook/releases/latest/download/Screenbook.dmg">Download for Mac<span class="version">Version 0.1.0</span></a>
+      <span class="fine">Free and open source · macOS 14 or later · <a href="https://github.com/JonathanGarro/screenbook/releases">Release notes</a></span>
+    </div>
+  </section>
+
+  <!-- the app window -->
+  <section class="shot reveal" aria-label="Screenbook's To Watch list with a show open">
+    <div class="window">
+      <div class="win-sidebar">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <p class="side-item"><span class="ico">&#9638;</span>What&rsquo;s New</p>
+        <p class="side-item active"><span class="ico">&#9654;</span>To Watch <b>5</b></p>
+        <p class="side-item"><span class="ico">&#9636;</span>Library</p>
+        <p class="side-item"><span class="ico">&#9733;</span>Reviews</p>
+        <p class="side-item"><span class="ico">&#8756;</span>Insights</p>
+      </div>
+      <div class="win-list">
+        <div class="seg"><span class="on">All 5</span><span>Movies 1</span><span>TV 4</span></div>
+        <div class="row selected">
+          <strong>The Long Watch</strong>
+          <span>TV, S02E04 on Thu, Dec 3</span>
+          <em class="count">6</em>
+        </div>
+        <div class="row">
+          <strong>Harbor Lights</strong>
+          <span>TV, Returning Series</span>
+          <em class="count">10</em>
+        </div>
+        <div class="row">
+          <strong>The Quiet Engine</strong>
+          <span>Movie, digital Tue, Nov 24</span>
+        </div>
+        <div class="row">
+          <strong>Northbound</strong>
+          <span>TV, all episodes out</span>
+          <em class="count">3</em>
+        </div>
+        <div class="row">
+          <strong>Paper Moons</strong>
+          <span>TV, S05E01 on Sun, Jan 10</span>
+          <em class="count">2</em>
+        </div>
+      </div>
+      <div class="win-note">
+        <h3>The Long Watch</h3>
+        <p class="meta">TV · 2024 · Returning Series</p>
+        <div class="props">
+          <span>Latest episode</span><em>S02E03, Thu, Nov 26</em>
+          <span>Next episode</span><em>S02E04, Thu, Dec 3</em>
+          <span>Unwatched</span><em>6 aired episodes</em>
+        </div>
+        <h4>Season 2 <span class="pick">Review Season</span></h4>
+        <ul class="eps">
+          <li><span class="check on"></span><b>S02E01</b>The Lighthouse<i>Nov 12</i></li>
+          <li><span class="check on"></span><b>S02E02</b>Low Tide<i>Nov 19</i></li>
+          <li><span class="check"></span><b>S02E03</b>Fog Signal<i>Nov 26</i></li>
+          <li class="future"><span class="check"></span><b>S02E04</b>Breakwater<i>Dec 3</i></li>
+          <li class="future"><span class="check"></span><b>S02E05</b>Second Light<i>Dec 10</i></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- features -->
+  <section id="features" class="feature reveal">
+    <div class="copy">
+      <p class="kicker">Calendar</p>
+      <h2>Know what&rsquo;s coming.</h2>
+      <p>Every episode and release in the next 30 days on one calendar: new seasons, weekly episodes, theatrical and digital dates for your country. Click anything to open it.</p>
+    </div>
+    <div class="card cal">
+      <div class="cal-head"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+      <div class="cal-grid">
+        <div class="day today"><b>22</b><i class="tv">Paper Moons S04E10</i></div>
+        <div class="day"><b>23</b></div>
+        <div class="day"><b>24</b><i class="movie">The Quiet Engine</i></div>
+        <div class="day"><b>25</b></div>
+        <div class="day"><b>26</b><i class="tv">The Long Watch S02E03</i><i class="tv">Harbor Lights S03E01</i></div>
+        <div class="day"><b>27</b></div>
+        <div class="day"><b>28</b></div>
+        <div class="day"><b>29</b></div>
+        <div class="day"><b>30</b></div>
+        <div class="day"><b>1</b><i class="movie">Glass Country</i></div>
+        <div class="day"><b>2</b></div>
+        <div class="day"><b>3</b><i class="tv">The Long Watch S02E04</i></div>
+        <div class="day"><b>4</b></div>
+        <div class="day"><b>5</b></div>
+      </div>
+      <p class="legend"><i class="tv"></i>TV episode <i class="movie"></i>Movie release</p>
+    </div>
+  </section>
+
+  <section class="feature flip reveal">
+    <div class="copy">
+      <p class="kicker">To Watch</p>
+      <h2>Always know what&rsquo;s next.</h2>
+      <p>Tick off episodes as you go, or mark everything up to where you are. To Watch shows only what you can watch right now. Shows between seasons wait quietly until they&rsquo;re back, and a count in the menu bar keeps score.</p>
+    </div>
+    <div class="card todos-card">
+      <p class="todo"><span class="box on"></span>S02E01 The Lighthouse<small>Watched Nov 13</small></p>
+      <p class="todo"><span class="box on"></span>S02E02 Low Tide<small>Watched Nov 20</small></p>
+      <p class="todo"><span class="box"></span>S02E03 Fog Signal<small>Aired Nov 26</small></p>
+      <div class="menubar"><span class="mb-icon">&#9654;</span> 6 <small>unwatched episodes</small></div>
+    </div>
+  </section>
+
+  <section class="feature reveal">
+    <div class="copy">
+      <p class="kicker">Reviews</p>
+      <h2>Write it down.</h2>
+      <p>Rate in half stars and write as much as you like. Screenbook sends each review to your Obsidian vault as a markdown note, one per movie and one per season, with IMDb and Rotten Tomatoes scores filled in.</p>
+    </div>
+    <div class="card note">
+      <p class="card-head">Glass Country</p>
+      <p class="stars">&#9733;&#9733;&#9733;&#9733;<span class="half">&#9733;</span> <small>4.5</small></p>
+      <div class="frontmatter">
+        <p><span>type:</span> Film</p>
+        <p><span>rating:</span> 4.5</p>
+        <p><span>finished_on:</span> 2026-12-02</p>
+        <p><span>imdb_rating:</span> '7.9'</p>
+        <p><span>rotten_tomatoes:</span> 94%</p>
+        <p><span>my_rating_delta:</span> -4</p>
+      </div>
+      <p class="line">A patient, gorgeous film that trusts its audience&hellip;</p>
+    </div>
+  </section>
+
+  <section class="feature flip reveal">
+    <div class="copy">
+      <p class="kicker">Insights</p>
+      <h2>See how your taste compares.</h2>
+      <p>Every movie you&rsquo;ve rated, plotted against critics or the IMDb crowd. On the line you agree. Below it you liked it more, above it less. Hover a dot to see which film it is.</p>
+    </div>
+    <div class="card scatter">
+      <svg viewBox="0 0 220 220" role="img" aria-label="Scatter plot of your ratings against critics">
+        <line class="grid" x1="20" y1="20" x2="20" y2="200"/><line class="grid" x1="20" y1="200" x2="200" y2="200"/>
+        <line class="parity" x1="20" y1="200" x2="200" y2="20"/>
+        <g class="dots">
+          <circle cx="56" cy="62" r="5"/><circle cx="92" cy="48" r="5"/><circle cx="128" cy="40" r="5"/><circle cx="164" cy="34" r="5"/>
+          <circle cx="146" cy="70" r="5"/><circle cx="110" cy="96" r="5"/><circle cx="182" cy="44" r="5"/><circle cx="74" cy="120" r="5"/>
+          <circle class="b" cx="128" cy="58" r="5"/><circle class="b" cx="164" cy="64" r="5"/><circle class="b" cx="92" cy="84" r="5"/>
+          <circle class="c" cx="182" cy="110" r="5"/><circle class="c" cx="146" cy="52" r="5"/><circle class="c" cx="56" cy="40" r="5"/>
+        </g>
+        <text x="196" y="190" text-anchor="end">You liked it more</text>
+        <text x="26" y="32">You liked it less</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- obsidian -->
+  <section id="obsidian" class="privacy reveal">
+    <div class="lock" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="56" height="56"><path d="M10 8h20a8 8 0 0 1 8 8v24H18a8 8 0 0 1-8-8z" fill="currentColor"/><path d="M16 18h16M16 25h16M16 32h10" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>
+    </div>
+    <h2>Your reviews stay yours.</h2>
+    <p class="lede">Reviews are plain markdown notes in your own Obsidian vault. Screenbook reads them back, so you can edit wherever you like.</p>
+    <div class="grid3">
+      <div>
+        <h3>Plain notes</h3>
+        <p>One note per movie and per season, with the same properties every time, so Obsidian Bases and Dataview just work.</p>
+      </div>
+      <div>
+        <h3>Edit anywhere</h3>
+        <p>Change a rating or rewrite a paragraph in Obsidian and Screenbook picks it up. Rename or move a note and its link follows.</p>
+      </div>
+      <div>
+        <h3>Bring your history</h3>
+        <p>Already review in Obsidian? Import your notes. Screenbook matches them to TMDB and shows you every match before it changes anything.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- numbers -->
+  <section class="stats reveal">
+    <div><b>30</b><span>days of episodes and releases on the calendar</span></div>
+    <div><b>&frac12;</b><span>star ratings, the way you already score</span></div>
+    <div><b>0</b><span>accounts, ads or analytics</span></div>
+  </section>
+
+  <!-- workflow -->
+  <section id="workflow" class="workflow reveal">
+    <h2>Fits how you already work.</h2>
+    <p class="lede">Screenbook builds on open movie data and keeps your writing where you keep everything else.</p>
+    <div class="tiles">
+      <div class="tile"><h3>TMDB</h3><p>Search, posters, release dates and episode schedules from The Movie Database, with your own free key.</p></div>
+      <div class="tile"><h3>IMDb and Rotten Tomatoes</h3><p>Add a free OMDb key and reviews get IMDb ratings, Metascore and the Rotten Tomatoes score.</p></div>
+      <div class="tile"><h3>Obsidian</h3><p>Reviews land in the folders you choose, with show index notes linked, and stay in sync both ways.</p></div>
+      <div class="tile"><h3>Menu bar and notifications</h3><p>A quiet count of what&rsquo;s unwatched, and a notification when a new episode airs or a movie comes out.</p></div>
+    </div>
+  </section>
+
+  <!-- free -->
+  <section id="free" class="workflow reveal">
+    <h2>Free, for good.</h2>
+    <p class="lede">Screenbook costs nothing to download or to use.</p>
+    <div class="tiles">
+      <div class="tile"><h3>No price</h3><p>No trial, no subscription, no limit on titles, and no account to sign up for.</p></div>
+      <div class="tile"><h3>Open source</h3><p>The code is on <a href="https://github.com/JonathanGarro/screenbook">GitHub</a> under the MIT license. Read it, change it, or build it yourself.</p></div>
+      <div class="tile"><h3>Nothing to sell</h3><p>No ads and no analytics. Your watching and your reviews stay on your Mac and in your vault.</p></div>
+      <div class="tile"><h3>Bring your own keys</h3><p>A free TMDB key is all it needs. A free OMDb key adds IMDb and Rotten Tomatoes scores.</p></div>
+    </div>
+  </section>
+
+  <section id="start" class="workflow reveal">
+    <h2>Up and running in minutes.</h2>
+    <p class="lede">Screenbook needs macOS 14 or later.</p>
+    <div class="tiles">
+      <div class="tile"><h3>1. Download</h3><p>Open the disk image and drag Screenbook to Applications. It&rsquo;s signed and notarized by Apple, and keeps itself up to date.</p></div>
+      <div class="tile"><h3>2. Add your key</h3><p>Get a free key at themoviedb.org, under Settings, API, and paste it into Screenbook&rsquo;s Settings.</p></div>
+      <div class="tile"><h3>3. Point at your vault</h3><p>Optional: choose your Obsidian vault and folders, and import the reviews you&rsquo;ve already written.</p></div>
+      <div class="tile"><h3>4. Add titles</h3><p>Press Cmd+N, search, and add. For a show you&rsquo;re up to date on, tick &ldquo;I&rsquo;m caught up.&rdquo;</p></div>
+    </div>
+  </section>
+
+  <section class="closing reveal">
+    <img src="icon.png" alt="" width="88" height="88">
+    <h2>A commonplace book for the screen.</h2>
+    <p class="lede">Readers have long kept commonplace books: one notebook for everything worth remembering. Screenbook is that notebook for what you watch, with the calendar and the to-watch list built in.</p>
+    <a class="pill" href="https://github.com/JonathanGarro/screenbook/releases/latest/download/Screenbook.dmg">Download for Mac<span class="version">Version 0.1.0</span></a>
+  </section>
+
+</main>
+
+<footer>
+  <p>Screenbook · A film and TV notebook for the Mac · <a href="https://github.com/JonathanGarro/screenbook">Source on GitHub</a> · <a href="https://github.com/JonathanGarro/screenbook/releases">Release notes</a> · <a href="https://github.com/JonathanGarro/screenbook/issues/new">Report a bug</a> · MIT license</p>
+  <p class="attrib">Movie and TV data from <a href="https://www.themoviedb.org">TMDB</a>. This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming availability from JustWatch. Scores from OMDb.</p>
+</footer>
+
+<script>
+  // fade sections in as they scroll into view
+  const io = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target) }
+  }, { threshold: 0.15 })
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el))
+</script>
+</body>
+</html>

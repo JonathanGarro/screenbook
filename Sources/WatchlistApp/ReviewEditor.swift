@@ -95,7 +95,7 @@ struct ReviewEditor: View {
                         .buttonStyle(.link)
                     Button("Locate Note...") { locate() }
                         .buttonStyle(.link)
-                        .help("Link this review to a note in the vault, for notes sent before Watchlist tracked IDs")
+                        .help("Link this review to a note in the vault, for notes sent before Screenbook tracked IDs")
                 }
                 .font(.callout)
             }
@@ -160,7 +160,7 @@ struct ReviewEditor: View {
                 dismiss()
             }
         } message: {
-            Text(review.isSent ? "This removes it from Watchlist only. The note in Obsidian stays." : "The draft will be lost.")
+            Text(review.isSent ? "This removes it from Screenbook only. The note in Obsidian stays." : "The draft will be lost.")
         }
     }
 
@@ -183,7 +183,7 @@ struct ReviewEditor: View {
         case .missing:
             banner("The note for this review is not in your vault. It may have been deleted.", color: .red) {
                 Button("Locate Note...") { locate() }
-                Button("Remove from Watchlist", role: .destructive) { confirmDelete = true }
+                Button("Remove from Screenbook", role: .destructive) { confirmDelete = true }
             }
         case .inSync:
             if pulledFromNote {

@@ -1,7 +1,8 @@
 .build/
-build/
-outputs/
-.env
-*.db
-.swiftpm/
 .DS_Store
+.env
+.swiftpm/
+*.db
+build/
+dist/
+outputs/

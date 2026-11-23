@@ -72,6 +72,7 @@ final class AppModel {
     static let periodicInterval: TimeInterval = 6 * 3600
 
     var service: WatchlistService?
+    let updates = Updates()
     var titles: [Title] = []
     var unwatched: [String: Int] = [:]
     /// observable copies of per-show db rows so episode checkmarks redraw immediately

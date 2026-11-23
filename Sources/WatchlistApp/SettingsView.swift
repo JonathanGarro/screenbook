@@ -44,7 +44,7 @@ struct SettingsView: View {
             Section("Checking") {
                 Toggle("Check for new releases when the app opens", isOn: binding(\.checkOnLaunch))
                 Toggle("Show unwatched count in the menu bar", isOn: binding(\.showInMenuBar))
-                Text("Details are cached for an hour, so reopening the app often does not refetch everything. While the menu bar count is on, closing the window keeps Watchlist running; use Cmd+Q to quit.")
+                Text("Details are cached for an hour, so reopening the app often does not refetch everything. While the menu bar count is on, closing the window keeps Screenbook running; use Cmd+Q to quit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -52,7 +52,7 @@ struct SettingsView: View {
             Section("Notifications") {
                 Toggle("Notify me when new episodes air", isOn: binding(\.notifyNewEpisodes))
                 Toggle("Notify me when a saved movie is released", isOn: binding(\.notifyMovieReleases))
-                Toggle("Check every 6 hours while Watchlist is running", isOn: binding(\.periodicCheck))
+                Toggle("Check every 6 hours while Screenbook is running", isOn: binding(\.periodicCheck))
                 HStack {
                     Text(statusText).foregroundStyle(.secondary)
                     Spacer()
@@ -121,6 +121,23 @@ struct SettingsView: View {
                         omdbSaved = true
                     }
                     .disabled(omdbKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+
+            Section("Updates") {
+                if model.updates.available {
+                    Toggle("Check for updates automatically", isOn: Binding(
+                        get: { model.updates.automaticChecks }, set: { model.updates.setAutomaticChecks($0) }))
+                    Toggle("Download and install updates automatically", isOn: Binding(
+                        get: { model.updates.automaticInstalls }, set: { model.updates.setAutomaticInstalls($0) }))
+                        .disabled(!model.updates.automaticChecks)
+                    HStack {
+                        Text("Version \(model.updates.current ?? "")").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Check Now") { model.updates.check() }
+                    }
+                } else {
+                    Text("Updates are available in release builds.").foregroundStyle(.secondary)
                 }
             }
 
