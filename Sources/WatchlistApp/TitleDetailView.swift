@@ -16,7 +16,7 @@ struct TitleDetailView: View {
                     HStack(spacing: 10) {
                         Image(systemName: "pause.circle.fill").foregroundStyle(.orange)
                         Text("You stopped \(title.mediaType == .tv ? "watching" : "tracking") this on \(DateText.pretty(stopped)). Your progress is kept, and it is left out of Unwatched, Upcoming, notifications, and checks.")
-                            .font(.callout)
+                            .font(.system(size: 14))
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         Button("Resume") { Task { await model.setStopped(title, false) } }
@@ -42,12 +42,13 @@ struct TitleDetailView: View {
                 let myReviews = model.reviews.filter { $0.tmdbId == title.tmdbId && $0.mediaType == title.mediaType }
                     .sorted { ($0.season, $0.finishedOn ?? "") < ($1.season, $1.finishedOn ?? "") }
                 if !myReviews.isEmpty {
-                    Text(myReviews.count == 1 ? "Your Review" : "Your Reviews").font(.headline)
+                    Text(myReviews.count == 1 ? "Your Review" : "Your Reviews").font(.system(size: 15, weight: .semibold))
                     ForEach(myReviews) { r in ReviewCard(review: r) }
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .font(.system(size: 15))
         }
         .toolbar {
             ToolbarItemGroup {
@@ -83,15 +84,12 @@ struct TitleDetailView: View {
         HStack(alignment: .top, spacing: 18) {
             Poster(url: title.posterURL, width: 120)
             VStack(alignment: .leading, spacing: 8) {
-                Text(title.title).font(.largeTitle.bold()).textSelection(.enabled)
-                HStack(spacing: 8) {
-                    Text(title.mediaType.label)
-                    if let y = title.year { Text(String(y)) }
-                    if let s = title.status { Text(s) }
-                }
-                .foregroundStyle(.secondary)
+                Text(title.title).font(.system(size: 28, weight: .bold)).textSelection(.enabled)
+                Text([title.mediaType.label, title.year.map(String.init), title.status].compactMap { $0 }.joined(separator: " · "))
+                    .foregroundStyle(.secondary)
 
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
+                Divider().padding(.top, 4)
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
                     switch title.mediaType {
                     case .movie:
                         fact("\(model.config.region) release", title.regionReleaseDate)
@@ -114,10 +112,11 @@ struct TitleDetailView: View {
                     }
                     fact("Added", title.addedOn)
                 }
-                .font(.callout)
+                .font(.system(size: 14))
+                Divider()
 
                 if let url = title.tmdbURL {
-                    Link("View on TMDB", destination: url).font(.callout)
+                    Link("View on TMDB", destination: url).font(.system(size: 14))
                 }
             }
         }
@@ -127,7 +126,7 @@ struct TitleDetailView: View {
     private func fact(_ label: String, _ value: String?) -> some View {
         if let value, !value.isEmpty {
             GridRow {
-                Text(label).foregroundStyle(.secondary)
+                Text(label).foregroundStyle(.secondary).frame(minWidth: 110, alignment: .leading)
                 Text(value.count == 10 && value.dropFirst(4).first == "-" ? DateText.pretty(value) : value)
             }
         }
@@ -138,7 +137,7 @@ struct TitleDetailView: View {
         return HStack(spacing: 12) {
             if let day = title.watchedOn {
                 Label("Watched", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.accent)
                 DatePicker("Watched on", selection: Binding(
                     get: { ReviewEditor.date(day) ?? Date() },
                     set: { model.setMovieWatched(title, on: DateText.day($0)) }
@@ -157,7 +156,7 @@ struct TitleDetailView: View {
             Spacer()
             if let review {
                 StarsLabel(rating: review.rating)
-                Text(review.isSent ? "In Obsidian" : "Draft").font(.caption).foregroundStyle(.secondary)
+                Text(review.isSent ? "In Obsidian" : "Draft").font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Button {
                 model.openReview(title)
@@ -171,7 +170,7 @@ struct TitleDetailView: View {
 
     private var streamingSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Where to Watch (\(model.config.region))").font(.headline)
+            Text("Where to Watch (\(model.config.region))").font(.system(size: 15, weight: .semibold))
             if !loadedProviders {
                 ProgressView().controlSize(.small)
             } else {
@@ -192,7 +191,7 @@ struct TitleDetailView: View {
                         Link("Details", destination: url)
                     }
                 }
-                .font(.caption)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             }
         }
@@ -206,7 +205,7 @@ struct ProviderStrip: View {
     var body: some View {
         if !providers.isEmpty {
             HStack(spacing: 8) {
-                Text(label).font(.caption).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
+                Text(label).font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
                 ForEach(providers.sorted { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) }, id: \.providerId) { p in
                     AsyncImage(url: p.logoURL) { img in
                         img.resizable()
@@ -239,27 +238,31 @@ struct EpisodesSection: View {
         let seasons = model.seasons(title).filter { $0.seasonNumber > 0 }
         let watched = model.watched(title)
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Episodes").font(.headline)
-                Spacer()
-                if !seasons.isEmpty {
-                    Picker("Season", selection: Binding(get: { season }, set: { chosenSeason = $0 })) {
-                        ForEach(seasons, id: \.seasonNumber) { s in
-                            Text(s.name ?? "Season \(s.seasonNumber)").tag(s.seasonNumber)
-                        }
+            HStack(spacing: 10) {
+                // the season name doubles as the season picker
+                Menu {
+                    ForEach(seasons, id: \.seasonNumber) { s in
+                        Button(s.name ?? "Season \(s.seasonNumber)") { chosenSeason = s.seasonNumber }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 180)
-                }
-                let seasonReview = model.existingReview(title, season: season)
-                Button {
-                    model.openReview(title, season: season)
                 } label: {
-                    Label(seasonReview == nil ? "Review Season" : (seasonReview!.isSent ? "Edit Review" : "Edit Draft"),
-                          systemImage: "square.and.pencil")
+                    Text(seasons.first { $0.seasonNumber == season }?.name ?? "Season \(season)")
+                        .font(.system(size: 19, weight: .bold))
                 }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(seasons.count < 2)
+                Spacer()
+                let seasonReview = model.existingReview(title, season: season)
+                Button(seasonReview == nil ? "Review Season" : (seasonReview!.isSent ? "Edit Review" : "Edit Draft")) {
+                    model.openReview(title, season: season)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.accent)
                 .help("Write a review of this season for Obsidian")
                 Menu {
+                    Toggle("All Episodes Are Out", isOn: Binding(get: { title.allAvailable }, set: { model.setAllAvailable(title, $0) }))
+                    Divider()
                     Button("Mark Season Watched") {
                         model.setWatched(title, aired.map(\.ref), watched: true)
                     }
@@ -273,18 +276,18 @@ struct EpisodesSection: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "checkmark.circle")
+                    Image(systemName: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
+                .help("Mark watched, or treat every listed episode as out (for shows released all at once)")
             }
-
-            Toggle(isOn: Binding(get: { title.allAvailable }, set: { model.setAllAvailable(title, $0) })) {
-                Text("All episodes are out")
-                Text("For shows a streaming service released all at once. TMDB only lists original broadcast dates.")
+            if title.allAvailable {
+                Text("All listed episodes are treated as out.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
-            .toggleStyle(.checkbox)
-            .font(.callout)
 
             if loading || chosenSeason == nil {
                 ProgressView().controlSize(.small)
@@ -357,24 +360,24 @@ struct EpisodeRow: View {
                 toggle(!watched)
             } label: {
                 Image(systemName: watched ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(watched ? Color.accentColor : Color.secondary)
+                    .font(.system(size: 18))
+                    .foregroundStyle(watched ? Theme.accent : Color.secondary.opacity(0.7))
             }
             .buttonStyle(.plain)
             .help(watched ? "Mark unwatched" : "Mark watched")
 
             Text(episode.ref.code)
-                .font(.callout.monospacedDigit())
+                .font(.system(size: 14).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 64, alignment: .leading)
             Text(episode.name ?? "Episode \(episode.episodeNumber)")
                 .lineLimit(1)
             Spacer()
             Text(episode.airDate.map { DateText.pretty(DateText.normalize($0)) } ?? "TBA")
-                .font(.callout)
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
-        .padding(.vertical, 6)
-        .opacity(aired ? 1 : 0.5)
+        .padding(.vertical, 10)
+        .opacity(aired ? 1 : 0.45)
     }
 }

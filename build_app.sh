@@ -112,8 +112,19 @@ cp build/icon.png "$ICON_TMP/AppIcon.icon/Assets/art.png"
 cat > "$ICON_TMP/AppIcon.icon/icon.json" <<JSON
 {"groups":[{"layers":[{"image-name":"art.png","name":"art","glass":false}]}],"supported-platforms":{"squares":"shared"}}
 JSON
-xcrun actool "$ICON_TMP/AppIcon.icon" --compile "$APP/Contents/Resources" --platform macosx \
-    --minimum-deployment-target 26.0 --app-icon AppIcon --output-partial-info-plist "$ICON_TMP/partial.plist" >/dev/null
+# the app's accent color, the purple from the website, used by system controls (NSAccentColorName)
+mkdir -p "$ICON_TMP/Assets.xcassets/AccentColor.colorset"
+echo '{"info":{"author":"xcode","version":1}}' > "$ICON_TMP/Assets.xcassets/Contents.json"
+cat > "$ICON_TMP/Assets.xcassets/AccentColor.colorset/Contents.json" <<JSON
+{"colors":[
+ {"idiom":"universal","color":{"color-space":"srgb","components":{"red":"0x4B","green":"0x44","blue":"0xC8","alpha":"1.000"}}},
+ {"idiom":"universal","appearances":[{"appearance":"luminosity","value":"dark"}],
+  "color":{"color-space":"srgb","components":{"red":"0x8A","green":"0x84","blue":"0xFF","alpha":"1.000"}}}],
+ "info":{"author":"xcode","version":1}}
+JSON
+xcrun actool "$ICON_TMP/AppIcon.icon" "$ICON_TMP/Assets.xcassets" --compile "$APP/Contents/Resources" --platform macosx \
+    --minimum-deployment-target 26.0 --app-icon AppIcon --accent-color AccentColor \
+    --output-partial-info-plist "$ICON_TMP/partial.plist" >/dev/null
 rm -rf "$ICON_TMP"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -127,6 +138,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>NSAccentColorName</key><string>AccentColor</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>

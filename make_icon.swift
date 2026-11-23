@@ -1,4 +1,4 @@
-// draws the app icon: a book cover in wemmick's blue gradient with a white play symbol and a red bookmark
+// draws the app icon: a book cover in a purple gradient with a white play symbol and a red bookmark
 // ribbon hanging from the top edge.
 // build_app.sh uses both forms:
 //   swift make_icon.swift build/AppIcon.iconset          rounded icon for older macos, turned into AppIcon.icns
@@ -13,9 +13,9 @@ let args = CommandLine.arguments.dropFirst().filter { $0 != "--full-bleed" }
 let fullBleed = CommandLine.arguments.contains("--full-bleed")
 let outDir = args.first ?? (fullBleed ? "build/icon.png" : "build/AppIcon.iconset")
 let canvas: CGFloat = 1024
-// a cover in wemmick's gradient, a white play symbol, and a red ribbon
-let top = (r: 47, g: 111, b: 222)
-let bottom = (r: 24, g: 52, b: 110)
+// a cover in a purple gradient, close to obsidian's, a white play symbol, and a red ribbon
+let top = (r: 124, g: 110, b: 242)
+let bottom = (r: 46, g: 36, b: 122)
 let ink = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
 let ribbonRed = CGColor(srgbRed: 229 / 255, green: 72 / 255, blue: 77 / 255, alpha: 1)
 
@@ -26,7 +26,7 @@ func rgb(_ c: (r: Int, g: Int, b: Int)) -> CGColor {
 // drawing (coordinates are top down: y grows toward the bottom of the icon)
 
 func drawBackground(_ ctx: CGContext, in rect: CGRect) {
-    // the whole icon is the book's cover, in wemmick's top to bottom gradient
+    // the whole icon is the book's cover, in a top to bottom gradient
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
     let gradient = CGGradient(colorsSpace: space, colors: [rgb(top), rgb(bottom)] as CFArray, locations: [0, 1])!
     ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: rect.minY), end: CGPoint(x: 0, y: rect.maxY),

@@ -42,11 +42,14 @@ struct LibraryList: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
-                List(entries, selection: $model.selectedTitleID) { e in
+                List(entries) { e in
                     LibraryRow(entry: e, showStatus: !model.librarySearch.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .tag(e.id)
+                        .selectableRow(e.id, selection: $model.selectedTitleID)
                         .contextMenu { menu(e) }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .arrowSelection(entries.map(\.id), selection: $model.selectedTitleID)
             }
         }
     }
@@ -81,6 +84,7 @@ struct LibraryList: View {
 
 struct LibraryRow: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.rowSelected) private var selected
     let entry: LibraryEntry
     var showStatus = false
 
@@ -123,14 +127,13 @@ struct LibraryRow: View {
                         Text(entry.name).font(.headline).lineLimit(1)
                         if let y = model.summaries[entry.id]?.year { Text(String(y)).foregroundStyle(.secondary) }
                     }
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(subtitle).font(.subheadline).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if let r = entry.rating {
-                    Text(myLabel(r)).font(.caption).foregroundStyle(.yellow)
+                    Text(myLabel(r)).font(.caption).foregroundStyle(selected ? Color.white : .yellow)
                 }
             }
-            .padding(.vertical, 2)
             .onAppear { model.loadSummary(entry) }
         }
     }
@@ -160,7 +163,7 @@ struct HistoryDetailView: View {
                 HStack(alignment: .top, spacing: 18) {
                     Poster(url: summary?.posterURL, width: 120)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(entry.name).font(.largeTitle.bold()).textSelection(.enabled)
+                        Text(entry.name).font(.system(size: 28, weight: .bold)).textSelection(.enabled)
                         HStack(spacing: 8) {
                             Text(entry.mediaType.label)
                             if let y = summary?.year { Text(String(y)) }
@@ -168,10 +171,10 @@ struct HistoryDetailView: View {
                         }
                         .foregroundStyle(.secondary)
                         if let g = summary?.genres, !g.isEmpty {
-                            Text(g.joined(separator: ", ")).font(.callout).foregroundStyle(.secondary)
+                            Text(g.joined(separator: ", ")).font(.system(size: 14)).foregroundStyle(.secondary)
                         }
                         Text("In your library from your reviews. It is not on your watchlist, so it is not checked for new releases or episodes.")
-                            .font(.callout)
+                            .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 14) {
@@ -186,20 +189,21 @@ struct HistoryDetailView: View {
                             }
                             .disabled(adding || !model.hasKey)
                             Link("View on TMDB", destination: URL(string: "https://www.themoviedb.org/\(entry.mediaType.rawValue)/\(entry.tmdbId)")!)
-                                .font(.callout)
+                                .font(.system(size: 14))
                         }
                     }
                 }
                 if let overview = summary?.overview, !overview.isEmpty {
                     Text(overview).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
-                Text(entry.reviews.count == 1 ? "Your Review" : "Your Reviews").font(.headline)
+                Text(entry.reviews.count == 1 ? "Your Review" : "Your Reviews").font(.system(size: 15, weight: .semibold))
                 ForEach(entry.reviews.sorted { ($0.season, $0.finishedOn ?? "") < ($1.season, $1.finishedOn ?? "") }) { r in
                     ReviewCard(review: r)
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .font(.system(size: 15))
         }
         .onAppear { model.loadSummary(entry) }
     }
@@ -213,7 +217,7 @@ struct ReviewCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Text(review.mediaType == .tv ? review.noteTitle : "Review").font(.callout.bold())
+                Text(review.mediaType == .tv ? review.noteTitle : "Review").font(.system(size: 14, weight: .bold))
                 StarsLabel(rating: review.rating)
                 if let d = review.finishedOn { Text(DateText.pretty(d)).foregroundStyle(.secondary) }
                 Spacer()
@@ -227,7 +231,7 @@ struct ReviewCard: View {
                     .buttonStyle(.link)
                 }
             }
-            .font(.callout)
+            .font(.system(size: 14))
             if !review.body.isEmpty {
                 Text(review.body)
                     .lineLimit(6)
@@ -235,7 +239,7 @@ struct ReviewCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -254,7 +258,7 @@ struct UnlinkedNoteView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(note.noteName).font(.largeTitle.bold()).textSelection(.enabled)
+                Text(note.noteName).font(.system(size: 28, weight: .bold)).textSelection(.enabled)
                 HStack(spacing: 10) {
                     Text(note.mediaType == .movie ? "Movie note" : "TV note")
                     StarsLabel(rating: note.rating)
@@ -264,7 +268,7 @@ struct UnlinkedNoteView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "link.badge.plus").foregroundStyle(.orange)
                     Text("This note is not linked to a TMDB title, so Screenbook cannot show its poster, add it to your watchlist, or include it in Insights. Link it to fix that; the note only gains a watchlist_id property (and a new name, if you choose one).")
-                        .font(.callout)
+                        .font(.system(size: 14))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(10)
@@ -290,6 +294,7 @@ struct UnlinkedNoteView: View {
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .font(.system(size: 15))
         }
         .sheet(isPresented: $linking) {
             FixMatchSheet(candidate: note) { picked, renameTo in

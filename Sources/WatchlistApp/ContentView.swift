@@ -10,19 +10,33 @@ struct ContentView: View {
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
-            List(SidebarItem.allCases, selection: $model.selection) { item in
-                Label {
-                    Text(item.label)
-                } icon: {
-                    Image(systemName: item.symbol)
-                        .frame(width: 20)
-                        .padding(.trailing, 6)
+            List {
+                ForEach(SidebarItem.allCases) { item in
+                    let on = model.selection == item
+                    HStack(spacing: 0) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 20)
+                            .padding(.trailing, 8)
+                        Text(item.label)
+                            .font(.system(size: 14, weight: .semibold))
+                        Spacer(minLength: 4)
+                        if let n = model.count(for: item) {
+                            Text("\(n)").font(.system(size: 12, weight: .semibold).monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(on ? Theme.sidebarSelection : Color.clear))
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.selection = item }
+                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
                 }
-                .font(.system(size: 14))
-                .padding(.vertical, 4)
-                .badge(model.count(for: item) ?? 0)
-                .tag(item)
             }
+            .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 170, ideal: 190)
             .safeAreaInset(edge: .bottom) { StatusFooter() }
         } content: {
@@ -97,6 +111,7 @@ struct ContentView: View {
             model.openWindowAction = openWindow
             await model.checkOnLaunchIfNeeded()
         }
+        .tint(Theme.accent)
         .sheet(isPresented: $model.showingAdd) {
             AddTitleSheet()
         }
@@ -180,9 +195,9 @@ struct TitleList: View {
                 }
             }
         } else {
-            List(items, selection: $model.selectedTitleID) { t in
+            List(items) { t in
                 TitleRow(title: t)
-                    .tag(t.id)
+                    .selectableRow(t.id, selection: $model.selectedTitleID)
                     .contextMenu {
                         Button("Refresh") { Task { await model.refresh(t) } }
                         if t.isStopped {
@@ -197,12 +212,16 @@ struct TitleList: View {
                         Button("Remove", role: .destructive) { model.remove(t) }
                     }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .arrowSelection(items.map(\.id), selection: $model.selectedTitleID)
         }
     }
 }
 
 struct TitleRow: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.rowSelected) private var selected
     let title: Title
     var detail: String? = nil
     /// your latest rating, shown at the trailing edge when present
@@ -215,28 +234,23 @@ struct TitleRow: View {
                 HStack(spacing: 6) {
                     Text(title.title).font(.headline).lineLimit(1)
                     if let y = title.year {
-                        Text(String(y)).foregroundStyle(.secondary)
+                        Text(String(y)).foregroundStyle(selected ? Color.white.opacity(0.8) : .secondary)
                     }
                 }
                 Text(detail ?? subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
             if let rating {
-                Text(myLabel(rating)).font(.caption).foregroundStyle(.yellow)
+                Text(myLabel(rating)).font(.caption).foregroundStyle(selected ? Color.white : .yellow)
             }
             if let n = model.unwatched[title.id], n > 0 {
-                Text("\(n)")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
+                CountBadge(count: n)
                     .help("\(n) aired episodes unwatched")
             }
         }
-        .padding(.vertical, 2)
     }
 
     private var subtitle: String {
@@ -286,14 +300,15 @@ struct WhatsNewList: View {
 
     var body: some View {
         @Bindable var model = model
-        List(selection: $model.selectedTitleID) {
+        List {
             if let r = model.report {
                 Section("Released Since Last Check") {
                     if r.releasedMovies.isEmpty {
                         Text("No new releases").foregroundStyle(.secondary)
                     }
                     ForEach(r.releasedMovies, id: \.id) { t in
-                        TitleRow(title: current(t), detail: "Released \(DateText.pretty(t.regionReleaseDate))").tag(t.id)
+                        TitleRow(title: current(t), detail: "Released \(DateText.pretty(t.regionReleaseDate))")
+                            .selectableRow(t.id, selection: $model.selectedTitleID)
                     }
                 }
                 Section("New Episodes") {
@@ -301,7 +316,8 @@ struct WhatsNewList: View {
                         Text("No new episodes").foregroundStyle(.secondary)
                     }
                     ForEach(r.newEpisodeShows, id: \.title.id) { u in
-                        TitleRow(title: current(u.title), detail: u.newlyAired.map(\.code).joined(separator: ", ")).tag(u.title.id)
+                        TitleRow(title: current(u.title), detail: u.newlyAired.map(\.code).joined(separator: ", "))
+                            .selectableRow(u.title.id, selection: $model.selectedTitleID)
                     }
                 }
             } else {
@@ -330,10 +346,11 @@ struct WhatsNewList: View {
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
-                    .tag(e.titleId)
+                    .selectableRow(e.titleId, selection: $model.selectedTitleID)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
         .task(id: model.titles.count) { await model.loadCalendar() }
     }
 
