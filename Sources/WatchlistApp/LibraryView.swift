@@ -188,7 +188,7 @@ struct HistoryDetailView: View {
                                 Label(adding ? "Adding..." : "Add to Watchlist", systemImage: "plus")
                             }
                             .disabled(adding || !model.hasKey)
-                            Link("View on TMDB", destination: URL(string: "https://www.themoviedb.org/\(entry.mediaType.rawValue)/\(entry.tmdbId)")!)
+                            Link("View on TMDB", destination: URL(string: "https://www.themoviedb.org/\(entry.mediaType.rawValue)/\(entry.tmdbId)")!).foregroundStyle(Theme.accent)
                                 .font(.system(size: 14))
                         }
                     }

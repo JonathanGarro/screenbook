@@ -116,7 +116,7 @@ struct TitleDetailView: View {
                 Divider()
 
                 if let url = title.tmdbURL {
-                    Link("View on TMDB", destination: url).font(.system(size: 14))
+                    Link("View on TMDB", destination: url).font(.system(size: 14)).foregroundStyle(Theme.accent)
                 }
             }
         }

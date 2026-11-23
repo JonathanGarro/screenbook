@@ -30,7 +30,7 @@ struct ContentView: View {
                     .padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 7).fill(on ? Theme.sidebarSelection : Color.clear))
                     .contentShape(Rectangle())
-                    .onTapGesture { model.selection = item }
+                    .onTapGesture { model.selectSection(item) }
                     .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)

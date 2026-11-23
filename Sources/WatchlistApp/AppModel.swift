@@ -467,6 +467,20 @@ final class AppModel {
         return try await service.search(text)
     }
 
+    /// switches the sidebar section. the open title stays only if the new list shows it; what's new
+    /// always goes back to the calendar.
+    func selectSection(_ item: SidebarItem) {
+        selection = item
+        guard let id = selectedTitleID else { return }
+        let stillListed: Bool
+        switch item {
+        case .unwatched: stillListed = items(for: .unwatched).contains { $0.id == id }
+        case .library: stillListed = filteredLibrary().contains { $0.id == id }
+        default: stillListed = false
+        }
+        if !stillListed { selectedTitleID = nil }
+    }
+
     /// selects a title, switching views if it does not belong in the current list
     func showInList(_ t: Title) {
         let visibleHere: Bool
