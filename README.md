@@ -96,7 +96,7 @@ What does not:
 
 Changes usually arrive within seconds through iCloud push notifications. A device also checks for changes when it comes to the front, and the Mac every five minutes as a fallback. If the same title changes on two devices before they sync, the later change wins; watched episodes merge, but unchecking an episode is not undone by an older check from another device.
 
-Sync is in the Mac app built from this repository and arrives in the downloadable app with the next release. The Mac app's Settings shows sync status and a **Sync Now** button. Without iCloud, or in a build signed without the iCloud entitlement, Screenbook works as before, on that device only.
+Sync is in the Mac app from version 0.1.4. The Mac app's Settings shows sync status and a **Sync Now** button. Without iCloud, or in a build signed without the iCloud entitlement, Screenbook works as before, on that device only.
 
 ## Reviews and Obsidian
 
