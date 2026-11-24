@@ -55,3 +55,5 @@ targets:
       path: ../iOS/Info.plist
       properties:
         UIBackgroundModes: [remote-notification]
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
