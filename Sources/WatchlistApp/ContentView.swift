@@ -116,6 +116,8 @@ struct ContentView: View {
             await model.checkOnLaunchIfNeeded()
         }
         .tint(Theme.accent)
+        // the bar with the app name uses the window's own background instead of a lighter toolbar strip
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .sheet(isPresented: $model.showingAdd) {
             AddTitleSheet()
         }
