@@ -351,16 +351,19 @@ final class AppModel {
         if let events = try? await service.calendarEvents(days: 30) { calendarEvents = events }
         calendarLoading = false
         if let path = UserDefaults.standard.string(forKey: "renderCalendarTo") {
-            renderImage(CalendarContent(), to: path)
+            // -renderCalendarWidth checks the narrow layout
+            let w = UserDefaults.standard.double(forKey: "renderCalendarWidth")
+            let width = w > 0 ? w : 1100
+            renderImage(CalendarContent(renderWidth: width - 40), to: path, width: width)
         }
     }
 
     /// debug: writes a view to light and dark images for layout checks
-    func renderImage<V: View>(_ content: V, to path: String) {
+    func renderImage<V: View>(_ content: V, to path: String, width: CGFloat = 1100) {
         for (suffix, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
             let view = content
                 .environment(self)
-                .frame(width: 1100)
+                .frame(width: width)
                 .background(Color(nsColor: .windowBackgroundColor))
                 .environment(\.colorScheme, scheme)
             NSApp.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
