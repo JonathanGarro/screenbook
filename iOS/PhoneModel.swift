@@ -68,9 +68,12 @@ final class PhoneModel {
 
     private func startSync(_ s: WatchlistService) {
         guard cloud == nil else { return }
-        let sync = CloudSync(db: s.db, today: { DateText.day(Date()) })
+        let sync = CloudSync(db: s.db, paths: s.paths, today: { DateText.day(Date()) })
         sync.onStatus = { status in
             Task { @MainActor in PhoneModel.shared.syncStatus = status }
+        }
+        sync.onTMDBKey = { key in
+            Task { @MainActor in await PhoneModel.shared.keyArrived(key) }
         }
         sync.onRemoteChange = { added in
             Task { @MainActor in await PhoneModel.shared.applyRemote(added) }
@@ -243,6 +246,14 @@ final class PhoneModel {
         (try? service?.db.seasons(tmdbId: t.tmdbId)) ?? []
     }
 
+    /// the key came from another device through icloud: start using it and fill in details
+    func keyArrived(_ key: String) async {
+        guard let service else { return }
+        service.client = TMDBClient(apiKey: key, db: service.db)
+        hasKey = true
+        await check()
+    }
+
     func saveKey(_ key: String) async {
         guard let service else { return }
         do {
@@ -250,6 +261,7 @@ final class PhoneModel {
             let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
             service.client = trimmed.isEmpty ? nil : TMDBClient(apiKey: trimmed, db: service.db)
             hasKey = service.client != nil
+            cloud?.pushTMDBKey()
             if hasKey { await check() }
         } catch {
             errorMessage = error.localizedDescription

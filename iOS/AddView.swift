@@ -84,7 +84,7 @@ struct SettingsView: View {
                 } header: {
                     Text("TMDB")
                 } footer: {
-                    Text("Get a free key at themoviedb.org, under Settings, API. It stays on this iPhone.")
+                    Text("Comes from your Mac through iCloud, end-to-end encrypted. To use a different key, paste it here and it syncs to your other devices.")
                 }
                 Section {
                     LabeledContent("Status", value: syncSummary)

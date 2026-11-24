@@ -22,7 +22,7 @@ struct WhatsNewView: View {
                 Section {
                     Button("Add your TMDB key") { showSettings = true }
                 } footer: {
-                    Text("Screenbook needs a TMDB API key to look up episodes and release dates.")
+                    Text("Episodes, posters and release dates come from TMDB. Your key syncs from your Mac through iCloud, or you can add it here.")
                 }
             }
             Section("New Episodes") {
@@ -88,7 +88,9 @@ struct ToWatchView: View {
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
 
-            if items.isEmpty {
+            if !model.hasKey {
+                NeedsKeyNote()
+            } else if items.isEmpty {
                 Text("Nothing to watch right now.").foregroundStyle(.secondary)
             }
             ForEach(items) { t in
@@ -124,6 +126,7 @@ struct LibraryView: View {
     var body: some View {
         let items = model.library(status, type: type, search: search)
         List {
+            if !model.hasKey { NeedsKeyNote() }
             if items.isEmpty {
                 Text(search.isEmpty ? "Nothing here." : "No matches.").foregroundStyle(.secondary)
             }
@@ -158,6 +161,15 @@ struct LibraryView: View {
     private func detail(_ t: Title) -> String {
         let kind = t.mediaType == .tv ? "TV" : "Movie"
         return [kind, t.year.map(String.init), model.status(t).rawValue].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+// shown until a tmdb key is saved: titles sync from the mac, but episode data comes from tmdb
+
+struct NeedsKeyNote: View {
+    var body: some View {
+        Text("Episodes and release dates need a TMDB key. It syncs from your Mac through iCloud, or add it in Settings, the gear on What's New.")
+            .font(.subheadline).foregroundStyle(.secondary)
     }
 }
 

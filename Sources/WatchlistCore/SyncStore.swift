@@ -214,6 +214,7 @@ extension Database {
             try execute("delete from sync_outbox")
             try setMeta("sync_state", nil)
             try setMeta("sync_seeded", nil)
+            try setMeta("sync_key", nil)
         }
     }
 

@@ -149,9 +149,12 @@ final class AppModel {
 
     private func startSync(_ s: WatchlistService) {
         guard cloud == nil, CloudSync.isAvailable else { return }
-        let sync = CloudSync(db: s.db, today: { DateText.day(Date()) })
+        let sync = CloudSync(db: s.db, paths: s.paths, today: { DateText.day(Date()) })
         sync.onStatus = { status in
             Task { @MainActor in AppModel.shared.syncStatus = status }
+        }
+        sync.onTMDBKey = { _ in
+            Task { @MainActor in AppModel.shared.open() }
         }
         sync.onRemoteChange = { added in
             Task { @MainActor in await AppModel.shared.applyRemoteChanges(added) }
@@ -849,6 +852,7 @@ final class AppModel {
         do {
             try APIKeyStore.save(key, paths)
             open()
+            cloud?.pushTMDBKey()
         } catch {
             errorMessage = error.localizedDescription
         }

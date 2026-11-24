@@ -1,5 +1,6 @@
 #if canImport(CloudKit)
 import CloudKit
+import CryptoKit
 import Foundation
 import os
 
@@ -10,6 +11,8 @@ import os
 public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
     public static let containerID = "iCloud.io.github.jonathangarro.screenbook"
     static let zoneID = CKRecordZone.ID(zoneName: "Screenbook", ownerName: CKCurrentUserDefaultName)
+    /// the tmdb key, kept in an encrypted field so only the user's devices can read it
+    static let keyRecordName = "setting-tmdb-key"
 
     public struct Status: Sendable, Equatable {
         public var lastSynced: Date?
@@ -20,6 +23,7 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
 
     private let log = Logger(subsystem: "io.github.jonathangarro.screenbook", category: "sync")
     private let db: Database
+    private let paths: AppPaths?
     private let today: @Sendable () -> String
     private var engine: CKSyncEngine!
     private let lock = NSLock()
@@ -28,6 +32,8 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
     /// called after changes from another device were written, with titles that arrived new
     public var onRemoteChange: (@Sendable ([Title]) -> Void)?
     public var onStatus: (@Sendable (Status) -> Void)?
+    /// called after a tmdb key arrived from another device and was saved to this one
+    public var onTMDBKey: (@Sendable (String) -> Void)?
 
     public var status: Status {
         lock.lock(); defer { lock.unlock() }
@@ -60,8 +66,9 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
         #endif
     }
 
-    public init(db: Database, today: @escaping @Sendable () -> String) {
+    public init(db: Database, paths: AppPaths? = nil, today: @escaping @Sendable () -> String) {
         self.db = db
+        self.paths = paths
         self.today = today
         // what we know about one environment means nothing in the other: start over when it changes
         if (try? db.meta("sync_env")) != Self.environment {
@@ -85,7 +92,39 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
             try? db.seedOutbox()
             try? db.setMeta("sync_seeded", "1")
         }
+        pushTMDBKey()
         pushLocalChanges()
+    }
+
+    /// sends this device's tmdb key when it is one icloud has not seen from here
+    public func pushTMDBKey(force: Bool = false) {
+        guard let key = localKey() else { return }
+        if !force, (try? db.meta("sync_key")) == Self.fingerprint(key) { return }
+        let id = Self.recordID(Self.keyRecordName)
+        engine.state.add(pendingRecordZoneChanges: [.saveRecord(id)])
+    }
+
+    private func localKey() -> String? {
+        paths.flatMap { APIKeyStore.resolve($0) }
+    }
+
+    /// a hash, so the database notes which key was synced without holding a second copy of it
+    static func fingerprint(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func receiveKey(_ record: CKRecord) {
+        guard let paths, let key = (record.encryptedValues["value"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
+        try? db.setMeta("sync_key", Self.fingerprint(key))
+        if APIKeyStore.resolve(paths) == key { return }
+        do {
+            try APIKeyStore.save(key, paths)
+            log.info("tmdb key arrived from icloud")
+            onTMDBKey?(key)
+        } catch {
+            updateStatus { $0.problem = Self.describe(error) }
+        }
     }
 
     /// moves new outbox entries into the engine, which sends them shortly after
@@ -154,6 +193,12 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
 
     /// the record to upload for a pending save, or nil when the row is gone (the engine then drops it)
     func record(for id: CKRecord.ID) -> CKRecord? {
+        if id.recordName == Self.keyRecordName {
+            guard let key = localKey() else { return nil }
+            let r = blankRecord(id, type: "Setting")
+            r.encryptedValues["value"] = key
+            return r
+        }
         switch SyncName.parse(id.recordName) {
         case .title(let tmdbId, let type):
             guard let t = try? db.syncTitle(tmdbId, type) else { return nil }
@@ -236,6 +281,7 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
             var changes: [RemoteChange] = []
             for m in e.modifications {
                 saveSystemFields(m.record)
+                if m.record.recordType == "Setting" { receiveKey(m.record); continue }
                 if let c = Self.change(from: m.record) { changes.append(c) }
             }
             changes += e.deletions.map { .deleted($0.recordID.recordName) }
@@ -250,6 +296,12 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
         case .sentRecordZoneChanges(let e):
             for record in e.savedRecords {
                 saveSystemFields(record)
+                if record.recordType == "Setting" {
+                    if let key = record.encryptedValues["value"] as? String {
+                        try? db.setMeta("sync_key", Self.fingerprint(key))
+                    }
+                    continue
+                }
                 try? db.clearOutbox(record.recordID.recordName, sentAt: record["modifiedAt"] as? String)
             }
             for id in e.deletedRecordIDs {
@@ -265,7 +317,10 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
                     // someone else saved first: keep their system fields, then the newer change wins
                     guard let server = failure.error.serverRecord else { break }
                     saveSystemFields(server)
-                    if case .title(let remote)? = Self.change(from: server),
+                    if server.recordType == "Setting" {
+                        // another device saved a key first: use theirs
+                        receiveKey(server)
+                    } else if case .title(let remote)? = Self.change(from: server),
                        let local = try? db.outboxEntry(id.recordName), local.changedAt > remote.modifiedAt {
                         retry.append(.saveRecord(id))
                     } else if let c = Self.change(from: server) {
@@ -327,6 +382,7 @@ public final class CloudSync: CKSyncEngineDelegate, @unchecked Sendable {
         engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: Self.zoneID))])
         try? db.seedOutbox()
         try? db.setMeta("sync_seeded", "1")
+        pushTMDBKey(force: true)
         pushLocalChanges()
     }
 
