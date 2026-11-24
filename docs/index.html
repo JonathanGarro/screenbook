@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Screenbook – Everything you watch, in one book</title>
-  <meta name="description" content="Screenbook tracks the movies and shows you care about, keeps a library of everything you have seen, and keeps your reviews in Obsidian. A native Mac app, with an iPhone companion in beta. Free and open source.">
+  <meta name="description" content="Screenbook tracks the movies and shows you care about, keeps a library of everything you have seen, and keeps your reviews in Obsidian. A native Mac app with optional Claude recommendations and an iPhone companion in beta. Free and open source.">
   <meta property="og:title" content="Screenbook">
   <meta property="og:description" content="Everything you watch, in one book. A native Mac app.">
   <meta property="og:image" content="https://screenbook.app/icon.png">
@@ -21,6 +21,7 @@
   <a class="brand" href="#top"><img src="icon.png" alt="" width="28" height="28"> Screenbook <span class="beta">Beta</span></a>
   <nav>
     <a href="#features">Features</a>
+    <a href="#claude">Claude</a>
     <a href="#iphone">iPhone</a>
     <a href="#obsidian">Obsidian</a>
     <a href="#free">Free</a>
@@ -186,8 +187,35 @@
     </div>
   </section>
 
+  <!-- claude -->
+  <section id="claude" class="feature reveal">
+    <div class="copy">
+      <p class="kicker">Ask Claude</p>
+      <h2>Never wonder what to watch.</h2>
+      <p>Ask what to watch tonight and get four picks grounded in your own ratings, checked against the streaming services you pay for, each with a line on why it fits. Add one with a click, or ask for four more.</p>
+      <p class="phone-note">Optional. Ask Claude uses your own Anthropic API key, so it stays off until you add one, and Anthropic bills it directly, usually a few cents a chat. What Claude reads is sent to Anthropic under that key; chats are saved only on your Mac.</p>
+    </div>
+    <div class="card chat-card" aria-label="An Ask Claude conversation with four recommendations">
+      <p class="msg me">Something like Severance, on my services?</p>
+      <p class="msg them">Four slow-burn mysteries, all on your services:</p>
+      <div class="recs">
+        <div class="rec p1"><b>+</b></div>
+        <div class="rec p4"><b>+</b></div>
+        <div class="rec p3"><b class="on">&#10003;</b></div>
+        <div class="rec p2"><b>+</b></div>
+      </div>
+      <ul class="rec-lines">
+        <li><strong>The Long Watch</strong> A lighthouse keeper loses track of time. <em>Why:</em> you gave Severance 5 stars.</li>
+        <li><strong>Paper Moons</strong> An office where nobody remembers Mondays. <em>Why:</em> same eerie workplace calm.</li>
+        <li><strong>Northbound</strong> A road trip with one passenger too many. <em>Why:</em> you rated slow reveals highly.</li>
+        <li><strong>Harbor Lights</strong> A town that resets every winter. <em>Why:</em> short seasons, which you finish.</li>
+      </ul>
+      <span class="more">&#8635; Show more</span>
+    </div>
+  </section>
+
   <!-- iphone -->
-  <section id="iphone" class="feature reveal">
+  <section id="iphone" class="feature flip reveal">
     <div class="copy">
       <p class="kicker">iPhone <span class="beta">Beta</span></p>
       <h2>In your pocket, in sync.</h2>
@@ -247,7 +275,7 @@
       <div class="tile"><h3>TMDB</h3><p>Search, posters, release dates and episode schedules from The Movie Database, with your own free key.</p></div>
       <div class="tile"><h3>IMDb and Rotten Tomatoes</h3><p>Add a free OMDb key and reviews get IMDb ratings, Metascore and the Rotten Tomatoes score.</p></div>
       <div class="tile"><h3>Obsidian</h3><p>Reviews land in the folders you choose, with show index notes linked, and stay in sync both ways.</p></div>
-      <div class="tile"><h3>Menu bar and notifications</h3><p>A quiet count of what&rsquo;s unwatched, and a notification when a new episode airs or a movie comes out.</p></div>
+      <div class="tile"><h3>Menu bar and notifications</h3><p>A quiet count of what&rsquo;s unwatched, and a notification when a new episode airs, a movie comes out, or a saved title arrives on one of your streaming services.</p></div>
     </div>
   </section>
 
@@ -259,7 +287,7 @@
       <div class="tile"><h3>No price</h3><p>No trial, no subscription, no limit on titles, and no account to sign up for.</p></div>
       <div class="tile"><h3>Open source</h3><p>The code is on <a href="https://github.com/JonathanGarro/screenbook">GitHub</a> under the MIT license. Read it, change it, or build it yourself.</p></div>
       <div class="tile"><h3>Nothing to sell</h3><p>No ads and no analytics. Your watching and your reviews stay on your devices, in your own iCloud, and in your vault.</p></div>
-      <div class="tile"><h3>Bring your own keys</h3><p>A free TMDB key is all it needs. A free OMDb key adds IMDb and Rotten Tomatoes scores.</p></div>
+      <div class="tile"><h3>Bring your own keys</h3><p>A free TMDB key is all it needs. A free OMDb key adds IMDb and Rotten Tomatoes scores, and an Anthropic key turns on Ask Claude.</p></div>
     </div>
   </section>
 

@@ -336,3 +336,19 @@ footer .attrib { margin-top: 10px; font-size: 12px; }
 .phone-tabs .on { color: var(--accent); font-weight: 600; }
 .phone-tabs b { position: absolute; top: -9px; right: 0; padding: 0 5px; border-radius: 99px; background: #e5484d; color: #fff; font-size: 9px; line-height: 14px; }
 @media (max-width: 760px) { .phone { width: 260px; } .phone-screen { height: 500px; } }
+
+/* ask claude */
+.chat-card { display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 80%; padding: 8px 13px; border-radius: 16px; font-size: 14px; line-height: 1.35; }
+.msg.me { align-self: flex-end; background: var(--accent); color: #fff; }
+.msg.them { align-self: flex-start; background: var(--surface-2); }
+.recs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
+.rec { aspect-ratio: 2 / 3; border-radius: 7px; position: relative; }
+.rec b {
+  position: absolute; top: 5px; right: 5px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 13px; line-height: 18px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.rec b.on { background: var(--green); font-size: 11px; }
+.rec-lines { list-style: disc; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.rec-lines strong { color: var(--text); margin-right: 4px; }
+.more { align-self: flex-start; font-size: 12.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 4px 10px; border-radius: 7px; }
