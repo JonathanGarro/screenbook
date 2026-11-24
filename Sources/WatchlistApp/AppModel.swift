@@ -42,6 +42,8 @@ enum LibraryType: String, CaseIterable, Identifiable {
 enum LibraryStatus: String, CaseIterable, Identifiable {
     case toWatch = "To Watch", waiting = "Waiting", watched = "Watched", stopped = "Stopped", all = "All"
     var id: String { rawValue }
+    /// the library's status filter. to watch has its own sidebar item, so it is not repeated here
+    static let filters: [LibraryStatus] = [.all, .waiting, .watched, .stopped]
 }
 
 /// one row in the library: a watchlist title, or a title known only from your reviews
@@ -102,7 +104,7 @@ final class AppModel {
     var libraryType: LibraryType = .all
     /// type filter for the to watch list
     var toWatchType: LibraryType = .all
-    var libraryStatus: LibraryStatus = .toWatch
+    var libraryStatus: LibraryStatus = .all
     var librarySearch = ""
     /// posters and details for history titles, filled lazily as rows appear
     var summaries: [String: TitleSummary] = [:]
@@ -545,7 +547,8 @@ final class AppModel {
         }
         if !visibleHere {
             selection = .library
-            libraryStatus = libraryEntries.first { $0.id == t.id }?.status ?? .all
+            let status = libraryEntries.first { $0.id == t.id }?.status ?? .all
+            libraryStatus = LibraryStatus.filters.contains(status) ? status : .all
             librarySearch = ""
         }
         selectedTitleID = t.id

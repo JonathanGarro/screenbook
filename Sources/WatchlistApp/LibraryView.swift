@@ -11,19 +11,27 @@ struct LibraryList: View {
         let entries = model.filteredLibrary()
         VStack(spacing: 0) {
             VStack(spacing: 8) {
-                Picker("Type", selection: $model.libraryType) {
-                    ForEach(LibraryType.allCases) { Text($0.rawValue).tag($0) }
+                VStack(alignment: .leading, spacing: 4) {
+                    filterLabel("Type")
+                    Picker("Type", selection: $model.libraryType) {
+                        ForEach(LibraryType.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                Picker("Status", selection: $model.libraryStatus) {
-                    ForEach(LibraryStatus.allCases) { s in Text(s.rawValue).tag(s) }
+                VStack(alignment: .leading, spacing: 4) {
+                    filterLabel("Status")
+                    Picker("Status", selection: $model.libraryStatus) {
+                        ForEach(LibraryStatus.filters) { s in Text(s.rawValue).tag(s) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .help("Waiting: caught up or not out yet. Watched: done, including your review history. Stopped: paused, progress kept.")
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help("To Watch: available now. Waiting: caught up or not out yet. Watched: done, including your review history.")
+                .padding(.top, 10)
                 TextField("Search library", text: $model.librarySearch)
                     .textFieldStyle(.roundedBorder)
+                    .padding(.top, 10)
             }
             .padding(10)
 
@@ -52,6 +60,13 @@ struct LibraryList: View {
                 .arrowSelection(entries.map(\.id), selection: $model.selectedTitleID)
             }
         }
+    }
+
+    private func filterLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.leading, 2)
     }
 
     private var emptyText: String {
@@ -112,40 +127,37 @@ struct LibraryRow: View {
                     .overlay(Image(systemName: "doc.text").foregroundStyle(.secondary))
                     .frame(width: 36, height: 54)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.name).font(.headline).lineLimit(1)
-                    Text("\(entry.mediaType.label), not linked to TMDB").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    Text(entry.name).font(.headline).lineLimit(2)
+                    Text("Not linked to TMDB").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if let r = entry.rating { Text(myLabel(r)).font(.caption).foregroundStyle(.yellow) }
+                RowTrailing(type: entry.mediaType, rating: entry.rating)
             }
             .padding(.vertical, 2)
         } else {
             HStack(spacing: 10) {
                 Poster(url: model.summaries[entry.id]?.posterURL, width: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(entry.name).font(.headline).lineLimit(1)
-                        if let y = model.summaries[entry.id]?.year { Text(String(y)).foregroundStyle(.secondary) }
-                    }
-                    Text(subtitle).font(.subheadline).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary).lineLimit(1)
+                    Text(entry.name).font(.headline).lineLimit(2)
+                    Text([model.summaries[entry.id]?.year.map(String.init), subtitle].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.subheadline).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                if let r = entry.rating {
-                    Text(myLabel(r)).font(.caption).foregroundStyle(selected ? Color.white : .yellow)
-                }
+                RowTrailing(type: entry.mediaType, rating: entry.rating)
             }
             .onAppear { model.loadSummary(entry) }
         }
     }
 
     private var subtitle: String {
-        var parts = [entry.mediaType.label]
+        var parts: [String] = []
         if entry.mediaType == .tv {
             let seasons = Set(entry.reviews.map(\.season)).count
             parts.append("\(seasons) season\(seasons == 1 ? "" : "s") reviewed")
         }
         if let d = entry.finishedOn { parts.append("finished \(DateText.pretty(d))") }
-        return parts.joined(separator: ", ")
+        let text = parts.joined(separator: ", ")
+        return text.prefix(1).uppercased() + text.dropFirst()
     }
 }
 

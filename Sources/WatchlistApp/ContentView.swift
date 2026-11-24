@@ -37,7 +37,7 @@ struct ContentView: View {
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
             .safeAreaInset(edge: .bottom) { StatusFooter() }
         } content: {
             Group {
@@ -231,21 +231,14 @@ struct TitleRow: View {
         HStack(spacing: 10) {
             Poster(url: title.posterURL, width: 36)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title.title).font(.headline).lineLimit(1)
-                    if let y = title.year {
-                        Text(String(y)).foregroundStyle(selected ? Color.white.opacity(0.8) : .secondary)
-                    }
-                }
-                Text(detail ?? subtitle)
+                Text(title.title).font(.headline).lineLimit(2)
+                Text([title.year.map(String.init), detail ?? subtitle].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let rating {
-                Text(myLabel(rating)).font(.caption).foregroundStyle(selected ? Color.white : .yellow)
-            }
+            RowTrailing(type: title.mediaType, rating: rating)
             if let n = model.unwatched[title.id], n > 0 {
                 CountBadge(count: n)
                     .help("\(n) aired episodes unwatched")
@@ -256,24 +249,46 @@ struct TitleRow: View {
     private var subtitle: String {
         let today = model.today
         if let stopped = title.stoppedOn {
-            return "\(title.mediaType.label), stopped \(DateText.pretty(stopped))"
+            return "Stopped \(DateText.pretty(stopped))"
         }
         switch title.mediaType {
         case .movie:
-            if let w = title.watchedOn { return "Movie, watched \(DateText.pretty(w))" }
-            if let d = title.regionReleaseDate, d > today { return "Movie, releases \(DateText.pretty(d))" }
-            if let d = title.digitalReleaseDate, d > today { return "Movie, digital \(DateText.pretty(d))" }
-            if let d = title.regionReleaseDate { return "Movie, released \(DateText.pretty(d))" }
-            return "Movie, no date yet"
+            if let w = title.watchedOn { return "Watched \(DateText.pretty(w))" }
+            if let d = title.regionReleaseDate, d > today { return "Releases \(DateText.pretty(d))" }
+            if let d = title.digitalReleaseDate, d > today { return "Digital \(DateText.pretty(d))" }
+            if let d = title.regionReleaseDate { return "Released \(DateText.pretty(d))" }
+            return "No date yet"
         case .tv:
             if title.allAvailable {
-                return "TV, all episodes out"
+                return "All episodes out"
             }
             if let d = title.nextAirDate {
-                return "TV, \(title.nextAir?.code ?? "next") on \(DateText.pretty(d))"
+                return "\(title.nextAir?.code ?? "Next") on \(DateText.pretty(d))"
             }
-            return "TV, \(title.status ?? "no upcoming episode")"
+            return title.status ?? "No upcoming episode"
         }
+    }
+}
+
+/// the right side of a title row: your rating above a tv or movie pill
+struct RowTrailing: View {
+    @Environment(\.rowSelected) private var selected
+    let type: MediaType
+    var rating: Double?
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            if let rating {
+                Text(myLabel(rating)).font(.caption).foregroundStyle(selected ? Color.white : .yellow)
+            }
+            Text(type == .tv ? "TV" : "Movie")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(selected ? Color.white : .secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(selected ? Color.white.opacity(0.2) : Color.secondary.opacity(0.15)))
+        }
+        .fixedSize()
     }
 }
 
