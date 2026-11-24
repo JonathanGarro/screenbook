@@ -1,10 +1,10 @@
 # Screenbook
 
-A Mac app for everything you watch. It tracks movies and TV shows you care about (release dates for your region, new episodes, a 30-day calendar, what you can watch now), keeps a library of everything you have seen, and lets you write reviews that live in your Obsidian vault as plain markdown notes. It is a native SwiftUI app with a small command line tool. Everything stays on your Mac in one SQLite file and your vault.
+A Mac app for everything you watch. It tracks movies and TV shows you care about (release dates for your region, new episodes, a 30-day calendar, what you can watch now), keeps a library of everything you have seen, and lets you write reviews that live in your Obsidian vault as plain markdown notes. It is a native SwiftUI app with a small command line tool, plus an iPhone companion for checking off episodes and adding titles on the go. Your data lives in one SQLite file and your vault, and syncs between your devices through your own iCloud account.
 
 **Website:** https://screenbook.app · **Download:** [Screenbook.dmg](https://github.com/JonathanGarro/screenbook/releases/latest/download/Screenbook.dmg) (signed and notarized, updates itself)
 
-No accounts and no analytics. Bring your own free TMDB key.
+No accounts beyond your own iCloud, and no analytics. Bring your own free TMDB key.
 
 Features:
 
@@ -18,6 +18,8 @@ Features:
 - Write reviews (movies, or TV by season) and send them to Obsidian as notes
 - Markdown digest and CSV export
 - A `screenbook` CLI that shares the same database
+- An iPhone app: What's New, To Watch, your library, episode checkmarks, and adding titles
+- iCloud sync between your Mac and iPhone, including your TMDB key (end-to-end encrypted)
 
 You need your own free TMDB API key. None is included in this repository.
 
@@ -62,6 +64,39 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 - **Detail pane**: dates, status, overview, and for shows an episode list per season. Click the circle to toggle watched. Right click an episode for "Mark Watched Up to Here". The checkmark menu marks a whole season or everything aired.
 - **Tools menu**: Write Digest (Cmd+D) writes `outputs/digest.md` and reveals it in Finder. Export CSV writes `outputs/watchlist.csv`. Show Data Folder opens the folder.
 - **Settings**: API key, check on open, menu bar count, notifications and the 6 hour check, region, streaming toggle, rent/buy toggle.
+
+## iPhone app
+
+The iPhone app is a companion to the Mac app: it covers watching, not writing. Reviews, Obsidian, Insights, and the CLI stay on the Mac.
+
+- **What's New**: shows with unwatched episodes, the most recently aired first, and a **Coming Up** list for the next 60 days. The tab badge counts shows with something new. Pull down to check TMDB.
+- **To Watch**: the same list as on the Mac, filtered by All, TV, or Movies.
+- **Library**: every title, with search and a filter menu for status (To Watch, Waiting, Watched, Stopped) and type.
+- **Add** (the search tab): search TMDB and add a title. For a show, pick **Start from the Beginning** or **I'm Caught Up**.
+- **Title page**: for a show, pick a season and tap episodes to check them off; touch and hold one for **Mark Watched Up to Here**. The ellipsis menu marks a whole season and toggles **All Episodes Are Out**. Movies get a Watched switch. Every title has Stop Watching and Remove.
+- **Settings** (the gear on What's New): your TMDB key, iCloud sync status with **Sync Now**, and **Check TMDB Now**.
+
+The app opens to the first season you have not finished and checks TMDB when it comes to the front if it has been more than three hours. It needs iOS 18 or later. It is not on the App Store or TestFlight yet; see [Building the iPhone app](#building-the-iphone-app) to install it from source.
+
+## iCloud sync
+
+The Mac and iPhone apps sync through the private CloudKit database in your own iCloud account. Nothing goes through a server of ours, and no one else can see your data.
+
+What syncs:
+
+- Your watchlist: which titles you track, when you added them, watched dates for movies, stopped titles, and the all episodes out setting.
+- Watched episodes.
+- Your TMDB key, in an end-to-end encrypted field, so a new device works without pasting it. Save a different key on any device and it reaches the others.
+
+What does not:
+
+- Reviews and anything Obsidian. They stay on the Mac.
+- TMDB details (episodes, posters, overviews, air dates). Each device fetches its own, using the synced key.
+- Which episodes and releases were already announced, so each device notifies on its own schedule.
+
+Changes usually arrive within seconds through iCloud push notifications. A device also checks for changes when it comes to the front, and the Mac every five minutes as a fallback. If the same title changes on two devices before they sync, the later change wins; watched episodes merge, but unchecking an episode is not undone by an older check from another device.
+
+Sync is in the Mac app built from this repository and arrives in the downloadable app with the next release. The Mac app's Settings shows sync status and a **Sync Now** button. Without iCloud, or in a build signed without the iCloud entitlement, Screenbook works as before, on that device only.
 
 ## Reviews and Obsidian
 
@@ -199,11 +234,13 @@ Everything is in `~/Library/Application Support/Screenbook/`:
 ```
 watchlist.db        sqlite database
 config.json         region and streaming settings
-.env                TMDB_API_KEY (if saved from the app or cli)
+.env                TMDB_API_KEY (if saved from the app or cli, or synced from iCloud)
 outputs/
   digest.md         written by digest
   watchlist.csv     written by export
 ```
+
+The iPhone app keeps the same files (without reviews) in its own Application Support folder.
 
 A GUI app has no meaningful working directory, so the relative paths from the original spec (`watchlist.db`, `outputs/digest.md`) are relative to this folder instead.
 
@@ -216,7 +253,9 @@ Open `watchlist.db` in any SQLite client.
 - `seasons`: `tmdb_id`, `season_number`, `episode_count`, `air_date`, `name`. Copied from the series details call; used to work out which episodes have aired.
 - `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`, `local_edits` (saved in Screenbook since the last send).
 - `api_cache`: `cache_key` (path plus sorted query, never the key), `body` (raw JSON), `fetched_at`.
-- `meta`: `last_check` timestamp and `last_report` (the last check result as JSON).
+- `meta`: `last_check` timestamp and `last_report` (the last check result as JSON), plus sync bookkeeping: `sync_state` (the CloudKit engine's saved state), `sync_env` (Development or Production), `sync_seeded`, and `sync_key` (a hash of the last synced TMDB key, never the key).
+- `sync_outbox`: local changes waiting to go to iCloud, one row per record (`record_name`, `is_delete`, `changed_at`). Database triggers fill it whenever a title or watched episode changes.
+- `sync_system_fields`: CloudKit's bookkeeping for each record, so saves update the existing record instead of conflicting.
 
 ## Data source notes
 
@@ -361,10 +400,40 @@ Sources/WatchlistCore/        shared logic
   Series.swift                series index from tmdb collections
   Insights.swift              data for the ratings comparison chart
   Tidy.swift                  standard note properties and order
-Sources/WatchlistApp/         swiftui app
+  SyncStore.swift             sync outbox, triggers, and applying changes from other devices
+  CloudSync.swift             cloudkit sync engine: sending, fetching, conflicts, the tmdb key
+Sources/WatchlistApp/         swiftui mac app
 Sources/screenbook/main.swift cli
+iOS/                          swiftui iphone app, using WatchlistCore
+Xcode/project.yml             xcodegen project for the iphone app and icloud provisioning
 Tests/WatchlistCoreTests/     swift testing suite with a mocked http transport (no network)
 ```
+
+### iCloud signing
+
+CloudKit needs a provisioning profile, which a plain `swift build` cannot make. Xcode creates it once from `Xcode/project.yml` (needs [XcodeGen](https://github.com/yonaskolb/XcodeGen) and a paid Apple Developer team; change the team ID, bundle ID, and `CloudSync.containerID` to your own):
+
+```sh
+cd Xcode && xcodegen generate
+xcodebuild -project ScreenbookApps.xcodeproj -scheme ScreenbookProvisioning \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+```
+
+`build_app.sh` then finds the profile, embeds it, and signs the app with the iCloud entitlements. It prints whether sync is on. Builds signed for development use CloudKit's Development environment and releases use Production, which keep separate data. Before the first release with sync, deploy the schema in the CloudKit Console (Deploy Schema Changes), or released apps cannot save.
+
+### Building the iPhone app
+
+Plug in your iPhone, turn on Developer Mode (Settings, Privacy & Security), and find its ID with `xcrun devicectl list devices`. Then:
+
+```sh
+cd Xcode && xcodegen generate
+xcodebuild -project ScreenbookApps.xcodeproj -scheme ScreenbookPhone -configuration Debug \
+    -destination 'id=<device id>' -derivedDataPath ../build/phone \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+xcrun devicectl device install app --device <device id> ../build/phone/Build/Products/Debug-iphoneos/Screenbook.app
+```
+
+Building for the device registers it with your team the first time. You can also open `ScreenbookApps.xcodeproj` in Xcode and run the ScreenbookPhone scheme. A debug build syncs with the Development environment, so pair it with a Mac app from `./build_app.sh`, not a release.
 
 ### Releasing
 
@@ -390,6 +459,7 @@ MIT. See [LICENSE](LICENSE). TMDB and JustWatch data are subject to their own te
 
 ## Future ideas (out of scope for v1)
 
-- iOS companion app or a web UI
+- A web UI
 - Import from other watchlist apps (Trakt, TV Time, Letterboxd exports)
-- Multi-user support or iCloud sync
+- Multi-user support
+- The iPhone app on TestFlight, and new-episode notifications on iPhone
