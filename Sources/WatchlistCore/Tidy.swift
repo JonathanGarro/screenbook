@@ -38,7 +38,11 @@ extension ObsidianNote {
             lines += p.lines
         }
         if let id = byKey[idKey] { lines += id.lines }
-        let out = "---\n" + lines.joined(separator: "\n") + "\n---\n" + body
+        // the title goes right under the properties: blank lines there show as an empty row in obsidian
+        var bodyLines = body.components(separatedBy: "\n")
+        while bodyLines.count > 1, bodyLines[0].trimmingCharacters(in: .whitespaces).isEmpty { bodyLines.removeFirst() }
+        let trimmed = bodyLines.joined(separator: "\n")
+        let out = "---\n" + lines.joined(separator: "\n") + "\n---\n" + trimmed
         return out == text ? nil : out
     }
 

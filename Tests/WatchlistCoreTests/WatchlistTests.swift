@@ -1290,3 +1290,10 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(keys == ObsidianNote.standardKeys(.movie))
     }
 }
+
+@Test func tidyDropsBlankLinesAfterProperties() {
+    let note = "---\ntype: Film\nrating: 3\nstars: ★★★\nfinished_on:\nconnected_to:\nfilm_series_index:\nrewatch: false\nimdb_id:\nimdb_link:\nimdb_rating:\nimdb_votes:\nmetascore:\nrotten_tomatoes:\nmy_rating_delta:\nwatchlist_id: movie-1-0\n---\n\n  \n# Title\n\n    indented text\n"
+    let out = ObsidianNote.tidy(note, type: .movie)
+    #expect(out?.contains("---\n# Title\n\n    indented text\n") == true)
+    #expect(ObsidianNote.tidy(out ?? "", type: .movie) == nil)
+}
