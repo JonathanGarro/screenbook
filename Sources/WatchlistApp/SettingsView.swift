@@ -20,6 +20,14 @@ struct SettingsView: View {
         ("MX", "Mexico"), ("IN", "India"), ("JP", "Japan"), ("KR", "South Korea"),
     ]
 
+    private var syncSummary: String {
+        let st = model.syncStatus
+        if let problem = st.problem { return problem }
+        if st.pending > 0 { return "Sending \(st.pending) changes" }
+        guard let last = st.lastSynced else { return "Waiting for iCloud" }
+        return "Up to date, synced " + last.formatted(.relative(presentation: .named))
+    }
+
     var body: some View {
         Form {
             Section("TMDB") {
@@ -138,6 +146,20 @@ struct SettingsView: View {
                     }
                 } else {
                     Text("Updates are available in release builds.").foregroundStyle(.secondary)
+                }
+            }
+
+            Section("iCloud Sync") {
+                if model.cloud != nil {
+                    HStack {
+                        Text(syncSummary).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Sync Now") { model.syncNow() }
+                    }
+                    Text("Your watchlist and watched episodes sync with Screenbook on your other devices. Reviews stay on this Mac.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    Text("iCloud sync is available in builds signed with the iCloud capability.").foregroundStyle(.secondary)
                 }
             }
 

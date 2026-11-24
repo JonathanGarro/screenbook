@@ -73,6 +73,9 @@ final class AppModel {
 
     var service: WatchlistService?
     let updates = Updates()
+    /// icloud sync with the iphone app; nil in builds without the icloud entitlement
+    var cloud: CloudSync?
+    var syncStatus = CloudSync.Status()
     var titles: [Title] = []
     var unwatched: [String: Int] = [:]
     /// observable copies of per-show db rows so episode checkmarks redraw immediately
@@ -136,12 +139,55 @@ final class AppModel {
             hasKey = s.client != nil
             report = s.lastReport
             reload()
+            startSync(s)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
+    // icloud sync
+
+    private func startSync(_ s: WatchlistService) {
+        guard cloud == nil, CloudSync.isAvailable else { return }
+        let sync = CloudSync(db: s.db, today: { DateText.day(Date()) })
+        sync.onStatus = { status in
+            Task { @MainActor in AppModel.shared.syncStatus = status }
+        }
+        sync.onRemoteChange = { added in
+            Task { @MainActor in await AppModel.shared.applyRemoteChanges(added) }
+        }
+        cloud = sync
+        sync.start()
+        // changes made by the screenbook cli only show up in the database, so look for them each minute.
+        // pushes from icloud normally bring other devices' changes; a fetch every five minutes is the fallback.
+        Task { @MainActor [weak self] in
+            var minute = 0
+            while let self, let cloud = self.cloud {
+                try? await Task.sleep(for: .seconds(60))
+                minute += 1
+                cloud.pushLocalChanges()
+                if minute % 5 == 0 { await cloud.fetchNow() }
+            }
+        }
+    }
+
+    /// another device changed something: redraw, and fetch details for titles added there
+    func applyRemoteChanges(_ added: [Title]) async {
+        reload()
+        guard let service, service.client != nil, !added.isEmpty else { return }
+        for t in added {
+            _ = try? await service.refresh(t)
+        }
+        reload()
+    }
+
+    func syncNow() {
+        guard let cloud else { return }
+        Task { await cloud.syncNow() }
+    }
+
     func reload() {
+        defer { cloud?.pushLocalChanges() }
         guard let service else { return }
         do {
             titles = try service.titles()
@@ -398,7 +444,10 @@ final class AppModel {
         // pick up obsidian edits whenever the user switches back to watchlist
         activeObserver = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification,
                                                                 object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in await self?.syncReviews() }
+            Task { @MainActor in
+                await self?.syncReviews()
+                if let cloud = self?.cloud { await cloud.fetchNow() }
+            }
         }
         if config.notifyNewEpisodes || config.notifyMovieReleases {
             await Notifier.requestAuthorization()

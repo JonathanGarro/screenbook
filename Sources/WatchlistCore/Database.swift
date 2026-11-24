@@ -162,6 +162,7 @@ public final class Database: @unchecked Sendable {
         if !cols.contains("all_available") {
             try exec("alter table titles add column all_available integer not null default 0;")
         }
+        try exec(syncSchemaSQL)
     }
 
     public static func inMemory() throws -> Database {

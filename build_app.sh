@@ -15,6 +15,10 @@
 # keep a copy of it (generate_keys --account screenbook -x <file>): installed apps only accept updates signed
 # with it. publish a release, tagged with the version in VERSION:
 #     gh release create v<version> dist/Screenbook.dmg dist/appcast.xml
+# icloud sync needs a provisioning profile in the app. xcode makes them once, from Xcode/project.yml:
+#     cd Xcode && xcodegen generate && xcodebuild -scheme ScreenbookProvisioning -allowProvisioningUpdates \
+#         -allowProvisioningDeviceRegistration build
+# (and an archive exported for developer id, for releases). without one the app builds and runs without sync.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -154,6 +158,50 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# icloud: embed the matching provisioning profile and sign with the icloud entitlements
+profile_named() {
+    # newest profile in xcode's folder with this name
+    local best="" f
+    for f in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.provisionprofile; do
+        [ -f "$f" ] || continue
+        [ "$(security cms -D -i "$f" 2>/dev/null | plutil -extract Name raw - 2>/dev/null)" = "$1" ] || continue
+        if [ -z "$best" ] || [ "$f" -nt "$best" ]; then best="$f"; fi
+    done
+    echo "$best"
+}
+ENTITLEMENTS=()
+if [ "$RELEASE" = 1 ]; then
+    PROFILE="$(profile_named "Mac Team Direct Provisioning Profile: $BUNDLE_ID")"
+    APS=production; CLOUD_ENV=Production
+else
+    PROFILE=""
+    [ "$IDENTITY" != "-" ] && PROFILE="$(profile_named "Mac Team Provisioning Profile: $BUNDLE_ID")"
+    APS=development; CLOUD_ENV=Development
+fi
+if [ -n "$PROFILE" ]; then
+    TEAM="$(security cms -D -i "$PROFILE" | plutil -extract TeamIdentifier.0 raw -)"
+    cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    cat > build/Screenbook.entitlements <<ENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.application-identifier</key><string>$TEAM.$BUNDLE_ID</string>
+    <key>com.apple.developer.team-identifier</key><string>$TEAM</string>
+    <key>com.apple.developer.aps-environment</key><string>$APS</string>
+    <key>com.apple.developer.icloud-container-environment</key><string>$CLOUD_ENV</string>
+    <key>com.apple.developer.icloud-container-identifiers</key><array><string>iCloud.$BUNDLE_ID</string></array>
+    <key>com.apple.developer.icloud-services</key><array><string>CloudKit</string></array>
+</dict>
+</plist>
+ENT
+    ENTITLEMENTS=(--entitlements build/Screenbook.entitlements)
+    echo "iCloud sync: on ($CLOUD_ENV)"
+else
+    rm -f "$APP/Contents/embedded.provisionprofile"
+    echo "iCloud sync: off (no provisioning profile, see the top of this script)"
+fi
+
 # sign inside out: sparkle's helpers as its docs lay out, then the app
 FW="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 sign "$FW/XPCServices/Installer.xpc"
@@ -161,7 +209,7 @@ sign "$FW/XPCServices/Downloader.xpc" --preserve-metadata=entitlements
 sign "$FW/Autoupdate"
 sign "$FW/Updater.app"
 sign "$APP/Contents/Frameworks/Sparkle.framework"
-sign "$APP"
+sign "$APP" ${ENTITLEMENTS[@]+"${ENTITLEMENTS[@]}"}
 sign build/bin/screenbook
 
 if [ "$RELEASE" = 1 ]; then

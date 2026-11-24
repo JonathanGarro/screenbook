@@ -3,8 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "Screenbook",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
+        .library(name: "WatchlistCore", targets: ["WatchlistCore"]),
         .executable(name: "WatchlistApp", targets: ["WatchlistApp"]),
         .executable(name: "screenbook", targets: ["screenbook"]),
     ],

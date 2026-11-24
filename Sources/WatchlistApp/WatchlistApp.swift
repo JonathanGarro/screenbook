@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().delegate = self
         }
+        // silent pushes from icloud tell the sync engine another device changed something
+        if CloudSync.isAvailable { NSApp.registerForRemoteNotifications() }
     }
 
     /// show banners even while the app is in front

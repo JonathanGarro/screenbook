@@ -470,6 +470,7 @@ extension WatchlistService {
             try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: src, to: target)
         }
+        #if os(macOS)
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
         p.arguments = ["-c", "-k", staging.path, dest.path]
@@ -477,6 +478,10 @@ extension WatchlistService {
         p.waitUntilExit()
         guard p.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
         return dest
+        #else
+        // the vault backup only runs on the mac
+        throw CocoaError(.featureUnsupported)
+        #endif
     }
 
     /// stamps ids into the included notes, records them as sent reviews, and optionally adds running shows

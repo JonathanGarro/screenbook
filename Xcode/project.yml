@@ -1,0 +1,23 @@
+name: ScreenbookApps
+options:
+  bundleIdPrefix: io.github.jonathangarro
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: WAFG79SSX5
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+targets:
+  ScreenbookProvisioning:
+    type: application
+    platform: macOS
+    sources: [Provisioning/main.swift]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.jonathangarro.screenbook
+        PRODUCT_NAME: Screenbook
+        CODE_SIGN_ENTITLEMENTS: Provisioning/Screenbook.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_HARDENED_RUNTIME: YES
