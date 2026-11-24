@@ -169,27 +169,84 @@ struct ChatView: View {
 
 struct ChatSidebar: View {
     @State private var chat = ChatModel.shared
+    @State private var renaming: ChatSummary?
+    @State private var newName = ""
+    @State private var showInfo = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button {
-                chat.newChat()
-            } label: {
-                Label("New Chat", systemImage: "square.and.pencil")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button {
+                    chat.newChat()
+                } label: {
+                    Label("New Chat", systemImage: "square.and.pencil")
+                }
+                .disabled(chat.currentID == nil && chat.items.isEmpty)
+                Spacer()
+                Button {
+                    showInfo.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("How Ask Claude works")
+                .popover(isPresented: $showInfo, arrowEdge: .bottom) { info }
             }
-            .disabled(chat.items.isEmpty)
+            .padding(10)
 
+            if chat.conversations.isEmpty {
+                ContentUnavailableView("No Chats Yet", systemImage: "bubble.left.and.text.bubble.right",
+                                       description: Text("Conversations are saved here, named by Claude. Right-click one to rename it."))
+                    .frame(maxHeight: .infinity)
+            } else {
+                List(selection: Binding(get: { chat.currentID }, set: { if let id = $0 { chat.open(id) } })) {
+                    ForEach(chat.conversations) { c in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(c.title).font(.body.weight(.medium)).lineLimit(2)
+                            Text(Self.when(c.updatedAt)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 3)
+                        .tag(c.id)
+                        .contextMenu {
+                            Button("Rename...") {
+                                newName = c.title
+                                renaming = c
+                            }
+                            Divider()
+                            Button("Delete", role: .destructive) { chat.delete(c.id) }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .onAppear { chat.loadList() }
+        .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Rename") {
+                if let c = renaming { chat.rename(c.id, to: newName) }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+
+    private var info: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text("How it works").font(.headline)
             Text("Each chat starts by giving Claude your ratings, your watchlist, and the streaming services you picked in Settings. It can search TMDB, check where a title streams, read one of your reviews when it helps, and add titles after you confirm.")
-                .foregroundStyle(.secondary)
             Text("Privacy and cost").font(.headline)
-            Text("Chat is off until you add your own Anthropic API key. What Claude sees is sent to Anthropic under that key, and Anthropic bills it, usually a few cents per chat. Chats are not saved.")
-                .foregroundStyle(.secondary)
-            Spacer()
+            Text("What Claude sees is sent to Anthropic under your API key, and Anthropic bills it, usually a few cents per chat. Chats are saved only on this Mac; clear them in Settings, under Claude.")
         }
         .font(.callout)
+        .frame(width: 300)
         .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    static func when(_ timestamp: String) -> String {
+        guard let d = DateText.parseTimestamp(timestamp) else { return "" }
+        return d.formatted(.relative(presentation: .named))
     }
 }
 

@@ -164,6 +164,7 @@ public final class Database: @unchecked Sendable {
         }
         try exec(syncSchemaSQL)
         try exec(streamingSchemaSQL)
+        try exec(chatSchemaSQL)
     }
 
     public static func inMemory() throws -> Database {

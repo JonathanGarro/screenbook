@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var omdbSaved = false
     @State private var claudeKey = ""
     @State private var claudeSaved = false
+    @State private var confirmClearChats = false
 
     static let regions: [(String, String)] = [
         ("US", "United States"), ("CA", "Canada"), ("GB", "United Kingdom"), ("IE", "Ireland"),
@@ -125,6 +126,18 @@ struct SettingsView: View {
                     }
                     .disabled(claudeKey.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
+                HStack {
+                    Text(chatCountText).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear Chat History...") { confirmClearChats = true }
+                        .disabled(ChatModel.shared.conversations.isEmpty)
+                }
+                .onAppear { ChatModel.shared.loadList() }
+                .confirmationDialog("Delete all saved chats?", isPresented: $confirmClearChats) {
+                    Button("Delete All Chats", role: .destructive) { ChatModel.shared.clearAll() }
+                } message: {
+                    Text("This removes every saved conversation from this Mac. It can't be undone.")
+                }
                 Text("Ask Claude sends your ratings, watchlist, streaming services, and the reviews it reads to Anthropic under your key, which Anthropic bills (usually a few cents per chat). Create a key at console.anthropic.com. Stored in the data folder .env file; the ANTHROPIC_API_KEY environment variable takes priority.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -236,6 +249,11 @@ struct SettingsView: View {
         var c = model.config
         c[keyPath: path] = value
         model.saveConfig(c)
+    }
+
+    private var chatCountText: String {
+        let n = ChatModel.shared.conversations.count
+        return n == 0 ? "No saved chats." : n == 1 ? "1 saved chat." : "\(n) saved chats."
     }
 
     private var statusText: String {

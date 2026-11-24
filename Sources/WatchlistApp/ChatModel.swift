@@ -4,11 +4,11 @@ import WatchlistCore
 
 // the chat pane: a conversation with claude about what to watch. replies stream in, and claude can
 // search tmdb, check where something streams, read your reviews, and add titles (after you confirm).
-// the conversation lives in memory until New Chat or quitting.
+// conversations are saved in the database on this mac, named by claude after the first exchange.
 
-struct ChatItem: Identifiable {
-    enum Kind { case user, assistant, activity, notice }
-    let id = UUID()
+struct ChatItem: Identifiable, Codable {
+    enum Kind: String, Codable { case user, assistant, activity, notice }
+    var id = UUID()
     let kind: Kind
     var text: String
 }
@@ -31,9 +31,17 @@ final class ChatModel {
     /// true while claude is thinking and no reply text has arrived yet
     var waiting = false
 
+    /// saved conversations, the most recent first
+    var conversations: [ChatSummary] = []
+    /// the open conversation, nil for a new one not yet sent
+    var currentID: String?
+
     private var messages: [JSONObject] = []
     private var system: String?
     private var task: Task<Void, Never>?
+    private var title = ""
+    private var renamed = false
+    private var createdAt = ""
 
     private var app: AppModel { AppModel.shared }
 
@@ -46,12 +54,23 @@ final class ChatModel {
     func send(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !busy, let key = apiKey else { return }
+        if currentID == nil {
+            currentID = UUID().uuidString
+            title = Self.placeholderTitle(text)
+            renamed = false
+            createdAt = DateText.timestamp(Date())
+        }
+        let first = messages.isEmpty
         items.append(ChatItem(kind: .user, text: text))
         busy = true
         task = Task {
             await run(text, key: key)
             busy = false
             waiting = false
+            save()
+            if first, !messages.isEmpty, let id = currentID {
+                await autoName(id, key: key)
+            }
         }
     }
 
@@ -65,6 +84,97 @@ final class ChatModel {
         items = []
         messages = []
         system = nil
+        currentID = nil
+        title = ""
+        renamed = false
+    }
+
+    // saved conversations
+
+    func loadList() {
+        conversations = (try? app.service?.db.chatSummaries()) ?? []
+    }
+
+    func open(_ id: String) {
+        guard id != currentID, let saved = try? app.service?.db.chat(id) else { return }
+        stop()
+        currentID = saved.id
+        title = saved.title
+        renamed = saved.renamed
+        createdAt = saved.createdAt
+        system = saved.system
+        messages = (try? JSONSerialization.jsonObject(with: Data(saved.messages.utf8))) as? [JSONObject] ?? []
+        items = (try? JSONDecoder().decode([ChatItem].self, from: Data(saved.items.utf8))) ?? []
+    }
+
+    func rename(_ id: String, to newTitle: String) {
+        let t = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        try? app.service?.db.renameChat(id, to: t, byUser: true)
+        if id == currentID { title = t; renamed = true }
+        loadList()
+    }
+
+    func delete(_ id: String) {
+        try? app.service?.db.deleteChat(id)
+        if id == currentID { newChat() }
+        loadList()
+    }
+
+    func clearAll() {
+        newChat()
+        try? app.service?.db.deleteAllChats()
+        loadList()
+    }
+
+    /// stores the open conversation once it has at least one finished exchange
+    private func save() {
+        guard let id = currentID, !messages.isEmpty, let db = app.service?.db else { return }
+        let msgs = (try? JSONSerialization.data(withJSONObject: messages, options: [.sortedKeys])).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+        let shown = (try? JSONEncoder().encode(items)).map { String(decoding: $0, as: UTF8.self) } ?? "[]"
+        let chat = SavedChat(id: id, title: title, renamed: renamed, system: system ?? "", messages: msgs, items: shown,
+                             createdAt: createdAt, updatedAt: DateText.timestamp(Date()))
+        try? db.saveChat(chat)
+        loadList()
+    }
+
+    static func placeholderTitle(_ text: String) -> String {
+        let one = text.replacingOccurrences(of: "\n", with: " ")
+        return one.count > 40 ? String(one.prefix(40)).trimmingCharacters(in: .whitespaces) + "..." : one
+    }
+
+    /// asks claude for a short name for the conversation, from its first exchange. keeps the placeholder on any failure.
+    private func autoName(_ id: String, key: String) async {
+        let user = items.first { $0.kind == .user }?.text ?? ""
+        let reply = items.first { $0.kind == .assistant }?.text ?? ""
+        var request = URLRequest(url: Claude.endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.setValue(key, forHTTPHeaderField: "x-api-key")
+        request.setValue(Claude.apiVersion, forHTTPHeaderField: "anthropic-version")
+        request.setValue(Claude.fallbackBeta, forHTTPHeaderField: "anthropic-beta")
+        let body: JSONObject = [
+            "model": Claude.model,
+            "max_tokens": 2000,
+            "output_config": ["effort": "low"],
+            "fallbacks": "default",
+            "system": "You name chat conversations about movies and TV. Reply with only a title of 2 to 5 words, in title case, with no quotes and no ending punctuation.",
+            "messages": [["role": "user", "content": "Name this conversation.\n\nUser: \(user.prefix(800))\n\nAssistant: \(reply.prefix(800))"]],
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return }
+        request.httpBody = data
+        guard let (out, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: out)) as? JSONObject,
+              json["stop_reason"] as? String != "refusal",
+              let blocks = json["content"] as? [JSONObject] else { return }
+        let name = blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined()
+            .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.\u{201C}\u{201D}")))
+        guard !name.isEmpty, name.count <= 60 else { return }
+        try? app.service?.db.renameChat(id, to: name, byUser: false)
+        if id == currentID, !renamed { title = name }
+        loadList()
     }
 
     func answer(_ yes: Bool) {

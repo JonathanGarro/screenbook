@@ -1464,3 +1464,34 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(!prompt.contains("Unrated"))
     }
 }
+
+@Suite struct ChatStoreTests {
+    @Test func savesRenamesAndClears() throws {
+        let db = try Database.inMemory()
+        var c = SavedChat(id: "a", title: "What to watch tonight", system: "sys", messages: "[]", items: "[]",
+                          createdAt: "2026-11-24T10:00:00Z", updatedAt: "2026-11-24T10:00:00Z")
+        try db.saveChat(c)
+        try db.saveChat(SavedChat(id: "b", title: "Older", system: "s", messages: "[]", items: "[]",
+                                  createdAt: "2026-11-23T10:00:00Z", updatedAt: "2026-11-23T10:00:00Z"))
+        #expect(try db.chatSummaries().map(\.id) == ["a", "b"])
+
+        // the user's name sticks; a later automatic name does not replace it
+        try db.renameChat("a", to: "Friday movie", byUser: true)
+        try db.renameChat("a", to: "Auto name", byUser: false)
+        #expect(try db.chat("a")?.title == "Friday movie")
+        #expect(try db.chat("a")?.renamed == true)
+
+        // saving more messages keeps the name
+        c.messages = #"[{"role":"user"}]"#
+        c.title = "Friday movie"
+        c.renamed = true
+        c.updatedAt = "2026-11-24T11:00:00Z"
+        try db.saveChat(c)
+        #expect(try db.chat("a")?.messages == #"[{"role":"user"}]"#)
+
+        try db.deleteChat("b")
+        #expect(try db.chatSummaries().count == 1)
+        try db.deleteAllChats()
+        #expect(try db.chatSummaries().isEmpty)
+    }
+}
