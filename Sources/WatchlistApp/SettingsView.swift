@@ -100,6 +100,15 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("My Streaming Services") {
+                StreamingServicesPicker()
+                Toggle("Notify me when a saved title comes to my services", isOn: binding(\.notifyStreaming))
+                    .disabled(model.config.myServices.isEmpty)
+                Text("Each check looks up your saved movies and shows on these services, at most once a day per title, and What's New lists the ones that arrived. Titles already on a service when you pick it are not announced. Watched movies and stopped titles are skipped.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Obsidian Reviews") {
                 LabeledContent("Vault") {
                     HStack {
@@ -231,5 +240,73 @@ struct SettingsView: View {
     /// keeps a region set from the cli selectable even if it is not in the short list
     static func regionOptions(current: String) -> [(String, String)] {
         regions.contains { $0.0 == current } ? regions : [(current, current)] + regions
+    }
+}
+
+// streaming services you subscribe to
+
+struct StreamingServicesPicker: View {
+    @Environment(AppModel.self) private var model
+    @State private var options: [Provider] = []
+    @State private var loading = false
+    @State private var filter = ""
+
+    var body: some View {
+        let mine = Set(model.config.myServices)
+        let shown = options.filter { filter.isEmpty || $0.providerName.localizedCaseInsensitiveContains(filter) }
+            .sorted { (mine.contains($0.providerId) ? 0 : 1) < (mine.contains($1.providerId) ? 0 : 1) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(summary(mine)).foregroundStyle(.secondary)
+                Spacer()
+                TextField("Filter", text: $filter)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 160)
+            }
+            if loading && options.isEmpty {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if options.isEmpty {
+                Text(model.hasKey ? "No services found for your region." : "Add a TMDB key to choose services.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(shown, id: \.providerId) { p in
+                            Toggle(isOn: Binding(get: { mine.contains(p.providerId) }, set: { toggle(p.providerId, $0) })) {
+                                HStack(spacing: 8) {
+                                    AsyncImage(url: p.logoURL) { $0.resizable() } placeholder: { Color.secondary.opacity(0.15) }
+                                        .frame(width: 22, height: 22)
+                                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                                    Text(p.providerName)
+                                }
+                            }
+                            .toggleStyle(.checkbox)
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .frame(height: 220)
+            }
+        }
+        .task(id: model.config.region) {
+            loading = true
+            options = await model.streamingServices()
+            loading = false
+        }
+    }
+
+    private func summary(_ mine: Set<Int>) -> String {
+        let names = options.filter { mine.contains($0.providerId) }.map(\.providerName)
+        if names.isEmpty { return mine.isEmpty ? "None chosen" : "\(mine.count) chosen" }
+        return ListFormatter.localizedString(byJoining: names)
+    }
+
+    private func toggle(_ id: Int, _ on: Bool) {
+        var c = model.config
+        var ids = Set(c.myServices)
+        if on { ids.insert(id) } else { ids.remove(id) }
+        c.myServices = ids.sorted()
+        model.saveConfig(c)
     }
 }

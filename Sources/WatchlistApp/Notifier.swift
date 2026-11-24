@@ -64,6 +64,25 @@ enum Notifier {
         }
     }
 
+    /// one notification per title that arrived on your services, or a summary when there are many
+    static func postStreaming(_ updates: [StreamingUpdate]) async {
+        guard available, !updates.isEmpty, await requestAuthorization() else { return }
+        if updates.count > maxIndividual {
+            let names = updates.prefix(3).map(\.title.title).joined(separator: ", ")
+            await send(id: "streaming-\(Date().timeIntervalSince1970)",
+                       title: "\(updates.count) titles now streaming",
+                       body: "\(names), and \(updates.count - 3) more on your services",
+                       titleID: nil)
+            return
+        }
+        for u in updates {
+            await send(id: "\(u.title.id)-streaming-\(u.services.joined(separator: "-"))",
+                       title: u.title.title,
+                       body: "Now streaming on \(ListFormatter.localizedString(byJoining: u.services))",
+                       titleID: u.title.id)
+        }
+    }
+
     static func describe(_ eps: [EpisodeRef]) -> String {
         switch eps.count {
         case 0: return "New episode"

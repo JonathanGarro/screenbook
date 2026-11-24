@@ -163,6 +163,7 @@ public final class Database: @unchecked Sendable {
             try exec("alter table titles add column all_available integer not null default 0;")
         }
         try exec(syncSchemaSQL)
+        try exec(streamingSchemaSQL)
     }
 
     public static func inMemory() throws -> Database {
@@ -298,6 +299,7 @@ extension Database {
     public func deleteTitle(tmdbId: Int, mediaType: MediaType) throws {
         try transaction {
             try execute("delete from titles where tmdb_id = ? and media_type = ?", [.of(tmdbId), .text(mediaType.rawValue)])
+            try execute("delete from streaming_seen where tmdb_id = ? and media_type = ?", [.of(tmdbId), .text(mediaType.rawValue)])
             if mediaType == .tv {
                 try execute("delete from watched_episodes where tmdb_id = ?", [.of(tmdbId)])
                 try execute("delete from seasons where tmdb_id = ?", [.of(tmdbId)])

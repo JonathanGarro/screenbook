@@ -152,6 +152,24 @@ struct StatusFooter: View {
             }
             Text("Data: TMDB")
                 .foregroundStyle(.tertiary)
+            SettingsLink {
+                HStack(spacing: 0) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .frame(width: 20)
+                        .padding(.trailing, 8)
+                    Text("Settings")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 6)
+            .help("Settings (Cmd+,)")
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -324,6 +342,17 @@ struct WhatsNewList: View {
                     ForEach(r.releasedMovies, id: \.id) { t in
                         TitleRow(title: current(t), detail: "Released \(DateText.pretty(t.regionReleaseDate))")
                             .selectableRow(t.id, selection: $model.selectedTitleID)
+                    }
+                }
+                if !model.config.myServices.isEmpty {
+                    Section("Now on Your Services") {
+                        if r.newlyStreaming.isEmpty {
+                            Text("Nothing new on your services").foregroundStyle(.secondary)
+                        }
+                        ForEach(r.newlyStreaming, id: \.title.id) { u in
+                            TitleRow(title: current(u.title), detail: "On " + ListFormatter.localizedString(byJoining: u.services))
+                                .selectableRow(u.title.id, selection: $model.selectedTitleID)
+                        }
                     }
                 }
                 Section("New Episodes") {

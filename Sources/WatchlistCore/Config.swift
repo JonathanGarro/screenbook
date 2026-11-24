@@ -62,6 +62,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var notifyNewEpisodes: Bool = true
     /// post a macos notification when a saved movie's release date arrives
     public var notifyMovieReleases: Bool = true
+    /// tmdb provider ids of the streaming services you pay for; titles arriving on them are announced
+    public var myServices: [Int] = []
+    /// post a macos notification when a saved title arrives on one of your services
+    public var notifyStreaming: Bool = true
     /// while the app is running, check again once the last check is this old
     public var periodicCheck: Bool = true
     /// obsidian vault folder; empty means use the vault obsidian reports as open
@@ -95,6 +99,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         notifyNewEpisodes = (try? c.decode(Bool.self, forKey: .notifyNewEpisodes)) ?? true
         notifyMovieReleases = (try? c.decode(Bool.self, forKey: .notifyMovieReleases)) ?? true
         periodicCheck = (try? c.decode(Bool.self, forKey: .periodicCheck)) ?? true
+        myServices = (try? c.decode([Int].self, forKey: .myServices)) ?? []
+        notifyStreaming = (try? c.decode(Bool.self, forKey: .notifyStreaming)) ?? true
         obsidianVaultPath = (try? c.decode(String.self, forKey: .obsidianVaultPath)) ?? ""
         obsidianFilmFolder = (try? c.decode(String.self, forKey: .obsidianFilmFolder)) ?? "Film"
         obsidianTVFolder = (try? c.decode(String.self, forKey: .obsidianTVFolder)) ?? "Television"

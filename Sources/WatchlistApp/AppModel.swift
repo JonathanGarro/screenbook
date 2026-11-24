@@ -425,7 +425,7 @@ final class AppModel {
         switch item {
         case .whatsNew:
             guard let report else { return nil }
-            let n = report.releasedMovies.count + report.newEpisodeShows.count
+            let n = report.releasedMovies.count + report.newEpisodeShows.count + report.newlyStreaming.count
             return n > 0 ? n : nil
         case .unwatched:
             let n = items(for: .unwatched).count
@@ -510,6 +510,9 @@ final class AppModel {
             }
             if config.notifyMovieReleases {
                 await Notifier.postReleases(r.releasedMovies, region: r.region)
+            }
+            if config.notifyStreaming {
+                await Notifier.postStreaming(r.newlyStreaming)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -633,6 +636,15 @@ final class AppModel {
     func episodes(_ t: Title, season: Int) async throws -> [EpisodeDetail] {
         guard let service else { return [] }
         return try await service.episodes(t, season: season)
+    }
+
+    /// streaming services in your region, for the settings picker
+    func streamingServices() async -> [Provider] {
+        guard let service else { return [] }
+        do { return try await service.streamingServices() } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
     }
 
     func providers(_ t: Title) async -> ProviderInfo? {

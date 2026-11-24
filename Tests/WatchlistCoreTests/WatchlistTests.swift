@@ -1316,3 +1316,72 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
     _ = try await service.add(SearchResult(id: 200, mediaType: "tv"))
     #expect(mock.count("tv/200") == 2)
 }
+
+// streaming alerts
+
+@Suite struct StreamingAlertTests {
+    static func providers(_ ids: [(Int, String)]) -> String {
+        let list = ids.map { #"{"provider_id":\#($0.0),"provider_name":"\#($0.1)","display_priority":1}"# }.joined(separator: ",")
+        return #"{"id":100,"results":{"US":{"link":"x","flatrate":[\#(list)]}}}"#
+    }
+
+    @Test func announcesOnceWhenATitleArrivesOnYourService() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-02-10")
+        mock.on("movie/100", Fixture.movie(release: "2025-06-01"))
+        mock.routes["/3/movie/100/watch/providers"] = [(200, Self.providers([(337, "Disney Plus")])),
+                                                       (200, Self.providers([(337, "Disney Plus"), (8, "Netflix")]))]
+        var config = AppConfig()
+        config.myServices = [8]
+        let service = try makeService(mock, clock, config: config)
+        try await service.add(SearchResult(id: 100, mediaType: "movie"))
+
+        // first look records where it is without an alert
+        #expect(try await service.check(force: true).newlyStreaming.isEmpty)
+        // a day later it is on netflix
+        clock.set("2026-02-11")
+        let report = try await service.check(force: true)
+        #expect(report.newlyStreaming.map(\.services) == [["Netflix"]])
+        // and it is not announced again
+        clock.set("2026-02-12")
+        #expect(try await service.check(force: true).newlyStreaming.isEmpty)
+    }
+
+    @Test func aServiceAddedLaterStartsQuietly() async throws {
+        let mock = MockTransport()
+        let clock = Clock("2026-02-10")
+        mock.on("movie/100", Fixture.movie(release: "2025-06-01"))
+        mock.on("movie/100/watch/providers", Self.providers([(8, "Netflix")]))
+        var config = AppConfig()
+        config.myServices = [337]
+        let service = try makeService(mock, clock, config: config)
+        try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        _ = try await service.check(force: true)
+
+        // netflix joins the list while the movie is already on it: no alert for something already there
+        service.config.myServices = [337, 8]
+        clock.set("2026-02-11")
+        #expect(try await service.check(force: true).newlyStreaming.isEmpty)
+    }
+
+    @Test func watchedMoviesAndStoppedTitlesAreSkipped() async throws {
+        let mock = MockTransport()
+        mock.on("movie/100", Fixture.movie(release: "2025-06-01"))
+        mock.on("movie/100/watch/providers", Self.providers([(8, "Netflix")]))
+        var config = AppConfig()
+        config.myServices = [8]
+        let service = try makeService(mock, Clock("2026-02-10"), config: config)
+        let t = try await service.add(SearchResult(id: 100, mediaType: "movie"))
+        try service.setMovieWatched(t, on: "2026-02-01")
+        _ = try await service.check(force: true)
+        #expect(mock.count("movie/100/watch/providers") == 0)
+    }
+
+    @Test func oldReportsWithoutStreamingStillLoad() throws {
+        let json = #"{"checkedAt":"2026-02-10T12:00:00Z","releasedMovies":[],"upcomingMovies":[],"showsWithUnwatched":[],"upcomingEpisodes":[],"providers":{},"errors":[],"region":"US"}"#
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        let r = try d.decode(CheckReport.self, from: Data(json.utf8))
+        #expect(r.newlyStreaming.isEmpty)
+    }
+}

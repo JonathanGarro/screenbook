@@ -15,6 +15,7 @@ Features:
 - Menu bar count of unwatched episodes
 - Notifications for new episodes and movie releases
 - Optional streaming availability (JustWatch data via TMDB)
+- Alerts when a saved title arrives on a streaming service you subscribe to
 - Write reviews (movies, or TV by season) and send them to Obsidian as notes
 - Markdown digest and CSV export
 - A `screenbook` CLI that shares the same database
@@ -63,7 +64,8 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 - **Check Now (Cmd+R)**: refreshes every title. Shift+Cmd+R bypasses the one hour cache.
 - **Detail pane**: dates, status, overview, and for shows an episode list per season. Click the circle to toggle watched. Right click an episode for "Mark Watched Up to Here". The checkmark menu marks a whole season or everything aired.
 - **Tools menu**: Write Digest (Cmd+D) writes `outputs/digest.md` and reveals it in Finder. Export CSV writes `outputs/watchlist.csv`. Show Data Folder opens the folder.
-- **Settings**: API key, check on open, menu bar count, notifications and the 6 hour check, region, streaming toggle, rent/buy toggle.
+- **My streaming services**: in Settings, tick the services you pay for. Each check then looks up your saved movies and shows on them (at most once a day per title), notifies you when one arrives on a service, and lists it under **Now on Your Services** in What's New. A title already on a service when you pick it, or when you first add it, is recorded quietly, so only real arrivals are announced. Watched movies and stopped titles are skipped. Only subscription, free, and ad-supported offers count, not rentals or purchases.
+- **Settings**: the gear at the bottom of the sidebar, or Cmd+,. API key, check on open, menu bar count, notifications and the 6 hour check, region, streaming toggle, rent/buy toggle.
 
 ## iPhone app
 
@@ -253,6 +255,7 @@ Open `watchlist.db` in any SQLite client.
 - `seasons`: `tmdb_id`, `season_number`, `episode_count`, `air_date`, `name`. Copied from the series details call; used to work out which episodes have aired.
 - `reviews`: `tmdb_id`, `media_type`, `season` (0 for movies), `note_title`, `rating`, `finished_on`, `body`, `rewatch`, `connected_to`, `series_index`, `exported_at`, `export_path`, `updated_at`, `local_edits` (saved in Screenbook since the last send).
 - `api_cache`: `cache_key` (path plus sorted query, never the key), `body` (raw JSON), `fetched_at`.
+- `streaming_seen`: `tmdb_id`, `media_type`, `provider_id`. Which of your services each title was on at the last look, so arrivals are announced once (provider 0 marks a title that has been looked up). Kept per device, not synced.
 - `meta`: `last_check` timestamp and `last_report` (the last check result as JSON), plus sync bookkeeping: `sync_state` (the CloudKit engine's saved state), `sync_env` (Development or Production), `sync_seeded`, and `sync_key` (a hash of the last synced TMDB key, never the key).
 - `sync_outbox`: local changes waiting to go to iCloud, one row per record (`record_name`, `is_delete`, `changed_at`). Database triggers fill it whenever a title or watched episode changes.
 - `sync_system_fields`: CloudKit's bookkeeping for each record, so saves update the existing record instead of conflicting.

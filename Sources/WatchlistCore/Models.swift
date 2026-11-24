@@ -214,6 +214,13 @@ public struct CheckReport: Codable, Sendable {
     public var providers: [String: ProviderInfo]
     public var errors: [String]
     public var region: String
+    /// optional so reports saved by older versions still load
+    var streaming: [StreamingUpdate]?
+    /// saved titles that arrived on one of your services since the last check
+    public var newlyStreaming: [StreamingUpdate] {
+        get { streaming ?? [] }
+        set { streaming = newValue }
+    }
 
     public init(checkedAt: Date, previousCheck: Date?, releasedMovies: [Title] = [], upcomingMovies: [Title] = [],
                 showsWithUnwatched: [ShowUpdate] = [], upcomingEpisodes: [Title] = [],
@@ -230,7 +237,7 @@ public struct CheckReport: Codable, Sendable {
     }
 
     public var newEpisodeShows: [ShowUpdate] { showsWithUnwatched.filter { !$0.newlyAired.isEmpty } }
-    public var hasNews: Bool { !releasedMovies.isEmpty || !newEpisodeShows.isEmpty }
+    public var hasNews: Bool { !releasedMovies.isEmpty || !newEpisodeShows.isEmpty || !newlyStreaming.isEmpty }
 }
 
 // streaming

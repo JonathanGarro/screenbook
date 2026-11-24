@@ -101,7 +101,7 @@ public final class WatchlistService: @unchecked Sendable {
 
     public var today: String { DateText.day(now()) }
 
-    private func requireClient() throws -> TMDBClient {
+    func requireClient() throws -> TMDBClient {
         guard let client else { throw TMDBError.missingAPIKey }
         return client
     }
@@ -374,6 +374,8 @@ public final class WatchlistService: @unchecked Sendable {
         report.showsWithUnwatched.sort {
             ($0.newlyAired.isEmpty ? 1 : 0, $0.title.title.lowercased()) < ($1.newlyAired.isEmpty ? 1 : 0, $1.title.title.lowercased())
         }
+
+        report.newlyStreaming = await checkStreaming(tracked)
 
         if config.streamingEnabled {
             let listed = report.releasedMovies + report.showsWithUnwatched.map(\.title)

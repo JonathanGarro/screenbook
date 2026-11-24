@@ -49,6 +49,8 @@ public enum CacheTTL {
     public static let season: TimeInterval = 6 * 3600
     /// providers refresh at most every 30 days
     public static let providers: TimeInterval = 30 * 24 * 3600
+    /// streaming alerts look again once a day, so arrivals are announced within a day
+    public static let streamingAlerts: TimeInterval = 24 * 3600
 }
 
 // response shapes (field names confirmed against developer.themoviedb.org reference)
@@ -390,8 +392,30 @@ public actor TMDBClient {
     }
 
     /// watch providers for one region (justwatch data). nil when tmdb has nothing for the region.
-    public func providers(_ type: MediaType, _ id: Int, region: String) async throws -> ProviderInfo? {
-        let data = try await get("\(type.rawValue)/\(id)/watch/providers", ttl: CacheTTL.providers)
+    public func providers(_ type: MediaType, _ id: Int, region: String, ttl: TimeInterval = CacheTTL.providers) async throws -> ProviderInfo? {
+        let data = try await get("\(type.rawValue)/\(id)/watch/providers", ttl: ttl)
         return try decode(ProvidersResponse.self, data).results[region.uppercased()]
+    }
+
+    /// every streaming service tmdb knows in a region, movies and tv combined, the most popular first
+    public func regionProviders(region: String) async throws -> [Provider] {
+        struct Entry: Decodable {
+            let providerId: Int
+            let providerName: String
+            let logoPath: String?
+            let displayPriorities: [String: Int]?
+            let displayPriority: Int?
+        }
+        struct Response: Decodable { let results: [Entry] }
+        var byId: [Int: Provider] = [:]
+        for kind in ["movie", "tv"] {
+            let data = try await get("watch/providers/\(kind)", query: ["watch_region": region.uppercased(), "language": "en-US"],
+                                     ttl: 7 * 24 * 3600)
+            for e in try decode(Response.self, data).results where byId[e.providerId] == nil {
+                byId[e.providerId] = Provider(providerId: e.providerId, providerName: e.providerName, logoPath: e.logoPath,
+                                              displayPriority: e.displayPriorities?[region.uppercased()] ?? e.displayPriority)
+            }
+        }
+        return byId.values.sorted { ($0.displayPriority ?? 999, $0.providerName) < ($1.displayPriority ?? 999, $1.providerName) }
     }
 }
