@@ -51,6 +51,8 @@ struct ContentView: View {
                     ReviewsList()
                 } else if model.selection == .insights {
                     InsightsTable()
+                } else if model.selection == .chat {
+                    ChatSidebar()
                 } else {
                     ToWatchList()
                 }
@@ -59,6 +61,8 @@ struct ContentView: View {
         } detail: {
             if model.selection == .insights {
                 InsightsView()
+            } else if model.selection == .chat {
+                ChatView()
             } else if model.selection == .whatsNew && model.selectedTitleID == nil {
                 CalendarView()
             } else if let t = model.title(model.selectedTitleID) {

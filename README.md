@@ -16,6 +16,7 @@ Features:
 - Notifications for new episodes and movie releases
 - Optional streaming availability (JustWatch data via TMDB)
 - Alerts when a saved title arrives on a streaming service you subscribe to
+- Ask Claude: chat about what to watch, grounded in your ratings (optional, with your own Anthropic API key)
 - Write reviews (movies, or TV by season) and send them to Obsidian as notes
 - Markdown digest and CSV export
 - A `screenbook` CLI that shares the same database
@@ -65,6 +66,7 @@ The key is never stored in source. The app and CLI read `TMDB_API_KEY` from the 
 - **Detail pane**: dates, status, overview, and for shows an episode list per season. Click the circle to toggle watched. Right click an episode for "Mark Watched Up to Here". The checkmark menu marks a whole season or everything aired.
 - **Tools menu**: Write Digest (Cmd+D) writes `outputs/digest.md` and reveals it in Finder. Export CSV writes `outputs/watchlist.csv`. Show Data Folder opens the folder.
 - **My streaming services**: in Settings, tick the services you pay for. Each check then looks up your saved movies and shows on them (at most once a day per title), notifies you when one arrives on a service, and lists it under **Now on Your Services** in What's New. A title already on a service when you pick it, or when you first add it, is recorded quietly, so only real arrivals are announced. Watched movies and stopped titles are skipped. Only subscription, free, and ad-supported offers count, not rentals or purchases.
+- **Ask Claude**: a chat in the sidebar for deciding what to watch. Each chat starts by giving Claude your ratings, your watchlist, and the streaming services you picked, and Claude can search TMDB, check where a title streams, read one of your reviews when it helps, and add a title to your watchlist after you confirm. It is off until you paste an Anthropic API key in Settings, Claude (or set `ANTHROPIC_API_KEY`). What Claude sees is sent to Anthropic under your key and billed to it, usually a few cents per chat; chats are not saved. It uses Claude Opus 5.5 at medium effort, with prompt caching so follow-ups are cheap.
 - **Settings**: the gear at the bottom of the sidebar, or Cmd+,. API key, check on open, menu bar count, notifications and the 6 hour check, region, streaming toggle, rent/buy toggle.
 
 ## iPhone app
@@ -405,6 +407,8 @@ Sources/WatchlistCore/        shared logic
   Tidy.swift                  standard note properties and order
   SyncStore.swift             sync outbox, triggers, and applying changes from other devices
   CloudSync.swift             cloudkit sync engine: sending, fetching, conflicts, the tmdb key
+  Streaming.swift             alerts when saved titles arrive on your streaming services
+  Assistant.swift             ask claude: streamed replies, fallback handling, the taste profile prompt
 Sources/WatchlistApp/         swiftui mac app
 Sources/screenbook/main.swift cli
 iOS/                          swiftui iphone app, using WatchlistCore

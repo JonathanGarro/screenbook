@@ -1385,3 +1385,82 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
         #expect(r.newlyStreaming.isEmpty)
     }
 }
+
+// assistant
+
+@Suite struct AssistantTests {
+    func run(_ lines: [String]) throws -> (ReplyAccumulator, String) {
+        var acc = ReplyAccumulator()
+        var text = ""
+        for line in lines { if let e = SSE.event(fromLine: line), let t = try acc.apply(e) { text += t } }
+        return (acc, text)
+    }
+
+    @Test func rebuildsThinkingTextAndToolCalls() throws {
+        let (acc, text) = try run([
+            "event: message_start", #"data: {"type":"message_start","message":{"model":"claude-opus-5-5"}}"#,
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig123"}}"#,
+            #"data: {"type":"content_block_stop","index":0}"#,
+            #"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#,
+            #"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Let me "}}"#,
+            #"data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"check."}}"#,
+            #"data: {"type":"content_block_stop","index":1}"#,
+            #"data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"toolu_1","name":"search_tmdb","input":{}}}"#,
+            #"data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"query\": \"Sev"}}"#,
+            #"data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"erance\"}"}}"#,
+            #"data: {"type":"content_block_stop","index":2}"#,
+            #"data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":40}}"#,
+            #"data: {"type":"message_stop"}"#,
+        ])
+        #expect(text == "Let me check.")
+        #expect(acc.model == "claude-opus-5-5")
+        #expect(acc.stopReason == "tool_use")
+        #expect(acc.blocks.first?["signature"] as? String == "sig123")
+        #expect(acc.toolCalls.count == 1)
+        #expect(acc.toolCalls.first?.input["query"] as? String == "Severance")
+        #expect(acc.invalidToolInputs.isEmpty)
+    }
+
+    @Test func badToolJSONIsCaughtNotRun() throws {
+        let (acc, _) = try run([
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_2","name":"search_tmdb","input":{}}}"#,
+            #"data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"query\": \"Sev"}}"#,
+            #"data: {"type":"content_block_stop","index":0}"#,
+        ])
+        #expect(acc.invalidToolInputs["toolu_2"] == #"{"query": "Sev"#)
+    }
+
+    @Test func refusalAndStreamErrors() throws {
+        let (acc, _) = try run([#"data: {"type":"message_delta","delta":{"stop_reason":"refusal","stop_details":{"type":"refusal","category":"cyber"}}}"#])
+        #expect(acc.stopReason == "refusal")
+        #expect(acc.refusalCategory == "cyber")
+        #expect(throws: AssistantError.stream("Overloaded")) {
+            _ = try run([#"data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#])
+        }
+    }
+
+    @Test func fallbackDropsDeclinedThinkingButKeepsTheMarker() throws {
+        let (acc, _) = try run([
+            #"data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":"a"}}"#,
+            #"data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":"Partial"}}"#,
+            #"data: {"type":"content_block_start","index":2,"content_block":{"type":"fallback","from":{"model":"claude-opus-5-5"},"to":{"model":"claude-opus-5"}}}"#,
+            #"data: {"type":"content_block_start","index":3,"content_block":{"type":"thinking","thinking":"","signature":"b"}}"#,
+            #"data: {"type":"content_block_start","index":4,"content_block":{"type":"text","text":"Answer"}}"#,
+        ])
+        #expect(acc.historyContent.map { $0["type"] as? String } == ["text", "fallback", "thinking", "text"])
+    }
+
+    @Test func systemPromptListsRatingsHighestFirst() {
+        func review(_ id: Int, _ name: String, _ rating: Double?) -> Review {
+            Review(tmdbId: id, mediaType: .movie, season: 0, noteTitle: name, rating: rating, finishedOn: "2024-05-01",
+                   body: "", rewatch: false, updatedAt: "2024-05-01T00:00:00Z")
+        }
+        let prompt = TasteProfile.systemPrompt(reviews: [review(1, "Low", 1.5), review(2, "High", 5), review(3, "Unrated", nil)],
+                                               watchlist: [], services: ["Netflix"], region: "US", today: "2026-11-24")
+        #expect(prompt.contains("Their ratings (2, highest first):\n5/5 High (movie, 2024)\n1.5/5 Low (movie, 2024)\n"))
+        #expect(prompt.contains("Their streaming services: Netflix."))
+        #expect(!prompt.contains("Unrated"))
+    }
+}

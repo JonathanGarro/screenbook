@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var notifyStatus: UNAuthorizationStatus = .notDetermined
     @State private var omdbKey = ""
     @State private var omdbSaved = false
+    @State private var claudeKey = ""
+    @State private var claudeSaved = false
 
     static let regions: [(String, String)] = [
         ("US", "United States"), ("CA", "Canada"), ("GB", "United Kingdom"), ("IE", "Ireland"),
@@ -105,6 +107,25 @@ struct SettingsView: View {
                 Toggle("Notify me when a saved title comes to my services", isOn: binding(\.notifyStreaming))
                     .disabled(model.config.myServices.isEmpty)
                 Text("Each check looks up your saved movies and shows on these services, at most once a day per title, and What's New lists the ones that arrived. Titles already on a service when you pick it are not announced. Watched movies and stopped titles are skipped.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Claude") {
+                SecureField("Anthropic API key", text: $claudeKey)
+                HStack {
+                    Text(model.hasClaudeKey ? "A key is set. Ask Claude is on." : "No key set. Ask Claude stays off.")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if claudeSaved { Text("Saved").foregroundStyle(.secondary) }
+                    Button("Save Key") {
+                        model.saveClaudeKey(claudeKey)
+                        claudeKey = ""
+                        claudeSaved = true
+                    }
+                    .disabled(claudeKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                Text("Ask Claude sends your ratings, watchlist, streaming services, and the reviews it reads to Anthropic under your key, which Anthropic bills (usually a few cents per chat). Create a key at console.anthropic.com. Stored in the data folder .env file; the ANTHROPIC_API_KEY environment variable takes priority.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

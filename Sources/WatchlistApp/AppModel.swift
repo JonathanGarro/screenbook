@@ -7,7 +7,7 @@ import WatchlistCore
 // sidebar
 
 enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
-    case whatsNew, unwatched, library, reviews, insights
+    case whatsNew, unwatched, library, reviews, insights, chat
 
     var id: String { rawValue }
 
@@ -18,6 +18,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .library: return "Library"
         case .reviews: return "Reviews"
         case .insights: return "Insights"
+        case .chat: return "Ask Claude"
         }
     }
 
@@ -28,6 +29,7 @@ enum SidebarItem: String, CaseIterable, Identifiable, Hashable {
         case .library: return "books.vertical"
         case .reviews: return "star.bubble"
         case .insights: return "chart.dots.scatter"
+        case .chat: return "bubble.left.and.text.bubble.right"
         }
     }
 }
@@ -239,7 +241,7 @@ final class AppModel {
         let day = today
         let tracked = titles.filter { !$0.isStopped }
         switch item {
-        case .whatsNew, .reviews, .insights, .library:
+        case .whatsNew, .reviews, .insights, .library, .chat:
             _ = day
             return []
         case .unwatched:
@@ -849,6 +851,22 @@ final class AppModel {
     func externalRatings(_ r: Review) async -> ExternalRatings? {
         guard r.mediaType == .movie, let service else { return nil }
         return try? await service.externalRatings(tmdbId: r.tmdbId).ratings
+    }
+
+    var hasClaudeKey: Bool { APIKeyStore.resolve(paths, name: Claude.keyName) != nil }
+
+    func saveClaudeKey(_ key: String) {
+        do {
+            try APIKeyStore.save(key, paths, name: Claude.keyName)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// a title's name from the watchlist or review history, for chat activity lines
+    func titleName(_ tmdbId: Int, _ type: MediaType) -> String? {
+        titles.first { $0.tmdbId == tmdbId && $0.mediaType == type }?.title
+            ?? libraryEntries.first { $0.tmdbId == tmdbId && $0.mediaType == type }?.name
     }
 
     var hasOMDbKey: Bool { APIKeyStore.resolve(paths, name: APIKeyStore.omdbVariableName) != nil }
