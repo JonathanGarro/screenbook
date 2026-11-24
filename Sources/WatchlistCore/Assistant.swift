@@ -9,6 +9,9 @@ public enum Claude {
     public static let apiVersion = "2026-10-21"
     /// lets the api retry on another model if a safety classifier declines a request
     public static let fallbackBeta = "server-side-fallback-2026-07-01"
+    /// lets a saved chat continue after the tools or prompt changed in an app update: earlier thinking
+    /// that no longer matches is dropped instead of failing the request
+    public static let thinkingBindingBeta = "thinking-binding-controls-2026-08-01"
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     public static let keyName = "ANTHROPIC_API_KEY"
 }
@@ -154,8 +157,10 @@ public enum TasteProfile {
         - Before saying where something streams, call where_to_watch. When they want something to watch now, prefer titles on their services.
         - Skip things they have already rated or have on their watchlist unless they ask about them. Titles on their watchlist marked To Watch are good answers to "what should I watch tonight".
         - Call read_review when their own words about a title would help, for example to understand why they disliked something.
-        - Call add_to_watchlist only when they ask to add something. The app asks them to confirm first.
-        - Keep replies short: a few picks with one line each, unless they ask for more. Use plain markdown with bold titles, no tables, no headings.
+        - Whenever you recommend specific titles, call show_recommendations with at most four picks instead of listing them in text. The app shows them as posters with an add button, then a bullet for each, then a Show more button. Confirm each pick with search_tmdb first so you have its tmdb_id. In each pick, description is one sentence about what it is, and why is one sentence tying it to their ratings or their request. After calling it, add at most one short sentence and do not repeat the picks.
+        - When they ask for more picks for an earlier question, recommend four titles you have not suggested in this conversation.
+        - Call add_to_watchlist only when they ask to add something in words. The app asks them to confirm first.
+        - Keep other replies short. Use plain markdown with bold titles, no tables, no headings.
 
         Today is \(today). Region: \(region). \(services.isEmpty ? "They have not told Screenbook which streaming services they pay for." : "Their streaming services: \(services.joined(separator: ", ")).")
         Ratings are from 0.5 to 5 stars.

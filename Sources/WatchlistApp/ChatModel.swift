@@ -7,10 +7,31 @@ import WatchlistCore
 // conversations are saved in the database on this mac, named by claude after the first exchange.
 
 struct ChatItem: Identifiable, Codable {
-    enum Kind: String, Codable { case user, assistant, activity, notice }
+    enum Kind: String, Codable { case user, assistant, activity, notice, recommendations }
     var id = UUID()
     let kind: Kind
     var text: String
+    /// the picks, for a recommendations item
+    var recs: RecSet?
+}
+
+/// up to four picks claude recommended, and the question that led to them (for Show more)
+struct RecSet: Codable, Hashable {
+    var question: String
+    var picks: [Rec]
+}
+
+struct Rec: Codable, Hashable, Identifiable {
+    var tmdbId: Int
+    var mediaType: MediaType
+    var title: String
+    var year: String?
+    var posterPath: String?
+    var description: String
+    var why: String
+
+    var id: String { "\(mediaType.rawValue)-\(tmdbId)" }
+    var posterURL: URL? { posterPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") } }
 }
 
 /// a title claude wants to add, waiting for a yes or no
@@ -42,6 +63,8 @@ final class ChatModel {
     private var title = ""
     private var renamed = false
     private var createdAt = ""
+    /// the message that started the exchange in progress, kept with any picks for Show more
+    private var question = ""
 
     private var app: AppModel { AppModel.shared }
 
@@ -183,8 +206,31 @@ final class ChatModel {
         p.continuation.resume(returning: yes)
     }
 
+    /// asks for four new picks for the question behind a set of recommendations
+    func showMore(_ recs: RecSet) {
+        send("Show me four more recommendations for my earlier question: \u{201C}\(recs.question)\u{201D}. Pick different titles from the ones you have already suggested.")
+    }
+
+    /// adds a recommended title straight from its poster; the plus button is the confirmation
+    func add(_ rec: Rec) async {
+        guard let service = app.service, !isOnWatchlist(rec) else { return }
+        do {
+            _ = try await service.add(SearchResult(id: rec.tmdbId, mediaType: rec.mediaType.rawValue), caughtUp: false)
+            app.reload()
+        } catch {
+            app.errorMessage = error.localizedDescription
+        }
+    }
+
+    func isOnWatchlist(_ rec: Rec) -> Bool {
+        app.titles.contains { $0.tmdbId == rec.tmdbId && $0.mediaType == rec.mediaType }
+    }
+
     private func run(_ text: String, key: String) async {
         if system == nil { system = await buildSystemPrompt() }
+        // a show more request keeps the original question, so the next Show more asks the same thing
+        question = text.hasPrefix("Show me four more recommendations for my earlier question: ")
+            ? (items.last { $0.kind == .recommendations }?.recs?.question ?? text) : text
         let start = messages.count
         messages.append(["role": "user", "content": [["type": "text", "text": text]]])
         do {
@@ -244,10 +290,11 @@ final class ChatModel {
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue(key, forHTTPHeaderField: "x-api-key")
         request.setValue(Claude.apiVersion, forHTTPHeaderField: "anthropic-version")
-        request.setValue(Claude.fallbackBeta, forHTTPHeaderField: "anthropic-beta")
+        request.setValue("\(Claude.fallbackBeta),\(Claude.thinkingBindingBeta)", forHTTPHeaderField: "anthropic-beta")
         let body: JSONObject = [
             "model": Claude.model,
             "max_tokens": 32000,
+            "thinking": ["type": "adaptive", "block_binding": ["prefix_mismatch_behavior": "drop_block"]],
             "stream": true,
             "system": [["type": "text", "text": system ?? ""]],
             "messages": messages,
@@ -317,6 +364,14 @@ final class ChatModel {
                  ["tmdb_id": id, "media_type": type], ["tmdb_id", "media_type"]),
             tool("read_review", "The user's own written review of a title they rated. For a show, pass season to pick one season's review.",
                  ["tmdb_id": id, "media_type": type, "season": ["type": "integer", "description": "Season number, for TV"]], ["tmdb_id", "media_type"]),
+            tool("show_recommendations", "Show the user up to four recommended titles as cards with posters, an add button on each, and a Show more button. Use this for every recommendation of specific titles instead of listing them in text.",
+                 ["picks": ["type": "array", "maxItems": 4, "description": "One to four picks, best first",
+                            "items": ["type": "object",
+                                      "properties": ["tmdb_id": id, "media_type": type,
+                                                     "description": ["type": "string", "description": "One sentence about what it is"],
+                                                     "why": ["type": "string", "description": "One sentence on why it fits them, tied to their ratings or request"]],
+                                      "required": ["tmdb_id", "media_type", "description", "why"]]]],
+                 ["picks"]),
             tool("add_to_watchlist", "Add a title to the user's watchlist. Only when the user asks. The app shows them a confirmation first and tells you whether they agreed.",
                  ["tmdb_id": id, "media_type": type], ["tmdb_id", "media_type"]),
         ]
@@ -386,6 +441,37 @@ final class ChatModel {
                     ["note": r.noteTitle, "rating": r.rating ?? 0, "finished_on": r.finishedOn ?? "", "season": r.season,
                      "text": String(r.body.prefix(6000))]
                 }]))
+
+            case "show_recommendations":
+                guard let raw = input["picks"] as? [JSONObject], !raw.isEmpty else { return errorResult(id, "picks is required") }
+                var picks: [Rec] = []
+                var skipped: [String] = []
+                for p in raw.prefix(4) {
+                    guard let pid = p["tmdb_id"] as? Int, let ptype = (p["media_type"] as? String).flatMap(MediaType.init(rawValue:)) else {
+                        skipped.append("a pick without a valid tmdb_id and media_type"); continue
+                    }
+                    let description = p["description"] as? String ?? ""
+                    let why = p["why"] as? String ?? ""
+                    // the title, year, and poster come from tmdb, so a wrong id shows up as the wrong title, not a made-up one
+                    do {
+                        if ptype == .movie {
+                            let m = try await client.movie(pid)
+                            picks.append(Rec(tmdbId: pid, mediaType: .movie, title: m.title, year: m.releaseDate.map { String($0.prefix(4)) },
+                                             posterPath: m.posterPath, description: description, why: why))
+                        } else {
+                            let t = try await client.tv(pid)
+                            picks.append(Rec(tmdbId: pid, mediaType: .tv, title: t.name, year: t.firstAirDate.map { String($0.prefix(4)) },
+                                             posterPath: t.posterPath, description: description, why: why))
+                        }
+                    } catch {
+                        skipped.append("\(ptype.rawValue) \(pid) (not found on TMDB)")
+                    }
+                }
+                guard !picks.isEmpty else { return errorResult(id, "None of the picks could be found on TMDB: \(skipped.joined(separator: ", "))") }
+                items.append(ChatItem(kind: .recommendations, text: "", recs: RecSet(question: question, picks: picks)))
+                var note = "Shown to the user: " + picks.map { "\($0.title)\($0.year.map { " (\($0))" } ?? "")\(isOnWatchlist($0) ? " [already on their watchlist]" : "")" }.joined(separator: "; ")
+                if !skipped.isEmpty { note += ". Skipped: " + skipped.joined(separator: ", ") }
+                return okResult(id, note + ". Do not repeat them in text.")
 
             case "add_to_watchlist":
                 guard let tmdbId, let type else { return errorResult(id, "tmdb_id and media_type are required") }

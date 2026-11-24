@@ -114,6 +114,8 @@ struct ChatView: View {
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity)
+        case .recommendations:
+            if let recs = item.recs { RecommendationCard(recs: recs) }
         }
     }
 
@@ -164,6 +166,104 @@ struct ChatView: View {
 
     private func markdown(_ text: String) -> AttributedString {
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+}
+
+/// claude's picks: four covers in a row with an add button on each, a bullet per pick, then Show more
+struct RecommendationCard: View {
+    let recs: RecSet
+    @State private var chat = ChatModel.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(recs.picks) { PosterTile(rec: $0) }
+                // keeps covers the same size when there are fewer than four
+                ForEach(0..<max(0, 4 - recs.picks.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(recs.picks) { p in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\u{2022}").foregroundStyle(.secondary)
+                        Text(bullet(p)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Button {
+                chat.showMore(recs)
+            } label: {
+                Label("Show more", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.accent)
+            .disabled(chat.busy)
+            .help("Ask Claude for four different picks")
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.secondary.opacity(0.10)))
+    }
+
+    private func bullet(_ p: Rec) -> AttributedString {
+        var name = AttributedString(p.title)
+        name.font = .body.bold()
+        var meta = AttributedString(" (\([p.year, p.mediaType == .tv ? "TV" : "Movie"].compactMap { $0 }.joined(separator: ", ")))  ")
+        meta.foregroundColor = .secondary
+        var why = AttributedString(p.why.isEmpty ? "" : "  Why: ")
+        why.font = .body.italic()
+        return name + meta + AttributedString(p.description) + why + AttributedString(p.why)
+    }
+}
+
+/// one cover with a plus button at the top right, or a check once it is on the watchlist
+struct PosterTile: View {
+    let rec: Rec
+    @State private var chat = ChatModel.shared
+    @State private var adding = false
+
+    var body: some View {
+        Color.secondary.opacity(0.15)
+            .aspectRatio(2 / 3, contentMode: .fit)
+            .overlay {
+                AsyncImage(url: rec.posterURL) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Text(rec.title).font(.caption).multilineTextAlignment(.center).foregroundStyle(.secondary).padding(6)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .topTrailing) { badge.padding(6) }
+            .frame(maxWidth: .infinity)
+            .help("\(rec.title)\(rec.year.map { " (\($0))" } ?? "")")
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if chat.isOnWatchlist(rec) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(.white, Color.green)
+                .shadow(radius: 2)
+                .help("On your watchlist")
+        } else if adding {
+            ProgressView().controlSize(.small).padding(4).background(Circle().fill(.white))
+        } else {
+            Button {
+                adding = true
+                Task {
+                    await chat.add(rec)
+                    adding = false
+                }
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Theme.accent)
+                    .shadow(radius: 2)
+            }
+            .buttonStyle(.plain)
+            .help("Add \(rec.title) to your watchlist")
+        }
     }
 }
 
