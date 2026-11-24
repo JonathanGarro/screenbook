@@ -39,7 +39,7 @@ func drawBook(_ ctx: CGContext) {
 
     // play symbol in the middle of the cover, with softened corners
     let cx: CGFloat = 532
-    let cy: CGFloat = 548
+    let cy: CGFloat = 512
     let h: CGFloat = 372
     let w: CGFloat = 322
     let play = CGMutablePath()
