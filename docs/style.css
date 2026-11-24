@@ -11,7 +11,8 @@
   --accent-soft: rgba(75, 68, 200, 0.12);
   --green: #28a745;
   --orange: #e8890c;
-  --shadow: 0 30px 80px -20px rgba(36, 26, 82, 0.25), 0 10px 30px -10px rgba(0, 0, 0, 0.12);
+  /* a hairline edge, no drop shadow */
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
   --sidebar: #e9e9ee;
   --teal: #1f9a92;
   --tv: #2a78d6;
@@ -32,7 +33,7 @@
     --accent-soft: rgba(138, 132, 255, 0.16);
     --green: #3ccf65;
     --orange: #ffa53a;
-    --shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
     --sidebar: #232327;
     --teal: #2fc2b6;
     --tv: #3987e5;
@@ -84,7 +85,7 @@ section { padding: 0 24px; }
 
 /* hero */
 .hero { text-align: center; padding-top: clamp(64px, 11vw, 120px); }
-.hero-icon { border-radius: 22.5%; box-shadow: 0 20px 50px -12px rgba(36, 26, 82, 0.5); }
+.hero-icon { border-radius: 22.5%; }
 .hero h1 { font-size: clamp(48px, 9vw, 92px); line-height: 1.02; font-weight: 800; margin-top: 36px; letter-spacing: -0.035em; }
 .cta { margin-top: 36px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pill {
@@ -307,8 +308,8 @@ footer .attrib { margin-top: 10px; font-size: 12px; }
   --bezel: 11px; --radius: 54px;
   justify-self: center; position: relative; width: 300px; padding: var(--bezel); border-radius: var(--radius);
   background: #0c0c0e;
-  /* titanium rim, then a soft shadow straight below */
-  box-shadow: 0 0 0 1.5px #6e6e73, 0 0 0 4px #2c2c2e, 0 0 0 5px #48484a, 0 40px 60px -30px rgba(0, 0, 0, 0.55);
+  /* titanium rim */
+  box-shadow: 0 0 0 1.5px #6e6e73, 0 0 0 4px #2c2c2e, 0 0 0 5px #48484a;
 }
 /* side buttons: action and volume on the left, side button on the right */
 .iphone::before, .iphone::after { content: ""; position: absolute; width: 3px; border-radius: 2px; background: #48484a; }
