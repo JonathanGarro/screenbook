@@ -1297,3 +1297,22 @@ func makeService(_ mock: MockTransport, _ clock: Clock, config: AppConfig = AppC
     #expect(out?.contains("---\n# Title\n\n    indented text\n") == true)
     #expect(ObsidianNote.tidy(out ?? "", type: .movie) == nil)
 }
+
+@Test func movieWithBrokenReleaseDatesStillAdds() async throws {
+    let mock = MockTransport()
+    // tmdb fails the release dates call three times, then the plain details call works
+    mock.routes["/3/movie/100"] = [(500, #"{"status_message":"Internal error"}"#), (500, #"{"status_message":"Internal error"}"#),
+                                   (500, #"{"status_message":"Internal error"}"#), (200, Fixture.movie(release: "1985-11-01"))]
+    let service = try makeService(mock, Clock("2026-02-10"))
+    let t = try await service.add(SearchResult(id: 100, mediaType: "movie"))
+    #expect(t.title.isEmpty == false)
+    #expect(mock.count("movie/100") == 4)
+}
+
+@Test func serverErrorIsRetried() async throws {
+    let mock = MockTransport()
+    mock.routes["/3/tv/200"] = [(503, "{}"), (200, Fixture.tv(last: (1, 1, "2026-01-01"), next: nil, seasons: [(1, 1)]))]
+    let service = try makeService(mock, Clock("2026-02-10"))
+    _ = try await service.add(SearchResult(id: 200, mediaType: "tv"))
+    #expect(mock.count("tv/200") == 2)
+}

@@ -304,6 +304,13 @@ public actor TMDBClient {
                 if wait > 0 {
                     try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 }
+            case 500...599 where attempt < 2:
+                // tmdb's servers stumble now and then: try twice more before giving up
+                attempt += 1
+                let wait = backoffBase * pow(2, Double(attempt - 1))
+                if wait > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                }
             default:
                 let message = Self.statusMessage(data) ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode)
                 throw TMDBError.http(response.statusCode, message)
@@ -354,10 +361,16 @@ public actor TMDBClient {
         return ((r.movieResults ?? []).map { $0.withKind(.movie) }, (r.tvResults ?? []).map { $0.withKind(.tv) })
     }
 
-    /// movie details with release_dates appended in the same call
+    /// movie details with release_dates appended in the same call. tmdb's release dates fail with a server
+    /// error for some films; those come back without them and fall back to the main release date.
     public func movie(_ id: Int, ttl: TimeInterval = CacheTTL.details) async throws -> MovieDetails {
-        let data = try await get("movie/\(id)", query: ["append_to_response": "release_dates", "language": "en-US"], ttl: ttl)
-        return try decode(MovieDetails.self, data)
+        do {
+            let data = try await get("movie/\(id)", query: ["append_to_response": "release_dates", "language": "en-US"], ttl: ttl)
+            return try decode(MovieDetails.self, data)
+        } catch TMDBError.http(let code, _) where code >= 500 {
+            let data = try await get("movie/\(id)", query: ["language": "en-US"], ttl: ttl)
+            return try decode(MovieDetails.self, data)
+        }
     }
 
     /// a tmdb collection (e.g. "Dune Collection") with its films
