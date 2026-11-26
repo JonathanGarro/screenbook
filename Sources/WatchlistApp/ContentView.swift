@@ -31,14 +31,26 @@ struct ContentView: View {
                     .background(RoundedRectangle(cornerRadius: 7).fill(on ? Theme.sidebarSelection : Color.clear))
                     .contentShape(Rectangle())
                     .onTapGesture { model.selectSection(item) }
-                    .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
+                    .listRowInsets(EdgeInsets(top: 1, leading: -6, bottom: 1, trailing: 0))
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+            .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) { StatusFooter() }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+            // a raised panel floating on the window, with the window color around it
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Theme.panel)
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.panelEdge))
+                    .shadow(color: .black.opacity(0.28), radius: 6, y: 2)
+                    .padding(8)
+                    .ignoresSafeArea()
+            }
+            .navigationSplitViewColumnWidth(min: 196, ideal: 216)
         } content: {
             Group {
                 if !model.hasKey {

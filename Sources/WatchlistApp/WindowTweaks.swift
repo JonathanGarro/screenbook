@@ -25,32 +25,27 @@ enum WindowTweaks {
         }
     }
 
-    /// the sidebar's divider sits in a one pixel gap. its darker divider line is hidden and the gap is
-    /// filled with the sidebar's own material, so the sidebar runs straight into the middle pane. the
-    /// divider itself stays, so dragging it still resizes the sidebar.
+    /// the sidebar is drawn as a raised panel in swiftui, so the column's sidebar material becomes the
+    /// window's material and the divider in the gap beside it is made transparent. the window's background then shows around the
+    /// panel and through the gap, the same as behind the middle pane, with no seam. the divider still
+    /// resizes the sidebar when dragged.
     private static func hideSidebarEdge(in view: NSView) {
         if String(describing: type(of: view)) == "NSVibrantSplitDividerView" {
-            for sub in view.subviews {
-                if let effect = sub as? NSVisualEffectView {
-                    effect.alphaValue = 1
-                    effect.material = .sidebar
-                    effect.blendingMode = .behindWindow
-                    effect.state = .followsWindowActiveState
-                } else {
-                    sub.alphaValue = 0
-                }
-            }
+            for sub in view.subviews { sub.alphaValue = 0 }
             sidebarEdge = view
             return
+        }
+        // the sidebar content lives inside this view, so it gets the window's own material instead of
+        // being hidden
+        if let effect = view as? NSVisualEffectView, effect.material == .sidebar {
+            effect.material = .windowBackground
+            effect.blendingMode = .behindWindow
         }
         for sub in view.subviews { hideSidebarEdge(in: sub) }
     }
 
     private static func isFilled(_ edge: NSView) -> Bool {
-        edge.subviews.allSatisfy { sub in
-            if let effect = sub as? NSVisualEffectView { return effect.alphaValue == 1 && effect.material == .sidebar }
-            return sub.alphaValue == 0
-        }
+        edge.subviews.allSatisfy { $0.alphaValue == 0 }
     }
 
     /// debug: -dumpViewsTo <path> writes the main window's view tree, for finding stray lines

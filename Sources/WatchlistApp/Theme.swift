@@ -6,6 +6,9 @@ enum Theme {
     static let accent = Color(light: 0x4b44c8, dark: 0x8a84ff)
     static let accentSoft = Color(light: 0x4b44c8, dark: 0x8a84ff).opacity(0.16)
     static let sidebarSelection = Color.primary.opacity(0.08)
+    /// the raised sidebar panel, a step lighter than the window around it
+    static let panel = Color(light: 0xffffff, dark: 0x3a3d42)
+    static let panelEdge = Color(light: 0x000000, dark: 0xffffff).opacity(0.10)
 }
 
 private struct RowSelectedKey: EnvironmentKey {
